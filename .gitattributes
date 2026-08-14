@@ -6,6 +6,7 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.bat text eol=crlf
+*.iss text eol=crlf
 
 *.pdf binary
 *.exe binary

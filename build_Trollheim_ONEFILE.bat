@@ -2,6 +2,9 @@
 setlocal
 cd /d "%~dp0"
 
+set "NO_PAUSE="
+if /I "%~1"=="--no-pause" set "NO_PAUSE=1"
+
 echo ================================================
 echo  TROLLHEIM - BUILD ONE FILE EXE
 echo ================================================
@@ -45,7 +48,7 @@ echo.
 echo EXE generado en:
 echo %CD%\dist\Trollheim.exe
 echo.
-pause
+call :pause_if_needed
 exit /b 0
 
 :python_error
@@ -71,5 +74,9 @@ goto :failed
 echo ERROR construyendo Trollheim.exe.
 
 :failed
-pause
+call :pause_if_needed
 exit /b 1
+
+:pause_if_needed
+if not defined NO_PAUSE pause
+exit /b 0
