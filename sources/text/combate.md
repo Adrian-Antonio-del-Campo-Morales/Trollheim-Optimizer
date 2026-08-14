@@ -1,7 +1,7 @@
 # Combate cuerpo a cuerpo
 
-Referencia del núcleo que utiliza el motor. Las modificaciones situadas al
-final de `trollheim.pdf` tienen prioridad sobre el texto anterior.
+Las modificaciones situadas al final de `trollheim.pdf` tienen prioridad sobre
+el texto anterior.
 
 ## Secuencia del duelo
 
@@ -11,7 +11,7 @@ final de `trollheim.pdf` tienen prioridad sobre el texto anterior.
 4. Cada ataque tira para impactar, herir, salvar y, si se pierde la última
    Herida, determina el estado del defensor.
 
-**Fuente:** `trollheim.pdf`, pp. 34-37 y 167. **Estado:** implementado.
+**Fuente:** `trollheim.pdf`, pp. 34-37 y 167.
 
 ## Tirada para impactar
 
@@ -24,7 +24,7 @@ Se compara HA del atacante contra HA del defensor:
 | Resto | 4+ |
 | Defensor con HA 0 | 2+ |
 
-**Fuente:** `trollheim.pdf`, pp. 35 y 167. **Estado:** implementado.
+**Fuente:** `trollheim.pdf`, pp. 35 y 167.
 
 ## Combatir con dos armas
 
@@ -33,8 +33,7 @@ las reglas del arma con la que se realiza. Las armas a dos manos, los pares de
 armas indivisibles y otras armas marcadas como incompatibles anulan la mano
 secundaria.
 
-**Fuente:** `trollheim.pdf`, p. 35. **Estado:** implementado para el catálogo
-actual.
+**Fuente:** `trollheim.pdf`, p. 35.
 
 ## Tirada para herir
 
@@ -47,7 +46,7 @@ actual.
 | F entre R - 2 y R - 3 | 6+ |
 | F <= R - 4 | Imposible |
 
-**Fuente:** `trollheim.pdf`, pp. 31-32 y 167. **Estado:** implementado.
+**Fuente:** `trollheim.pdf`, pp. 31-32 y 167.
 
 ## Armadura y penetración
 
@@ -61,8 +60,7 @@ actual.
 La Fuerza 4 o superior empeora la salvación en `F - 3`. Algunas armas y
 materiales añaden penetración adicional.
 
-**Fuente:** `trollheim.pdf`, pp. 32, 50 y 167. **Estado:** implementado para
-las protecciones incluidas; véase el catálogo de ausencias.
+**Fuente:** `trollheim.pdf`, pp. 32, 50 y 167.
 
 ## Impactos críticos
 
@@ -75,9 +73,8 @@ Solo puede causarse un crítico por combatiente y fase.
 | 3-4 | Dos heridas; ignora armadura. |
 | 5-6 | Dos heridas; ignora armadura y +2 a la tirada de Heridas. |
 
-**Fuente:** `trollheim.pdf`, pp. 32 y 167. **Estado:** implementado. Las tablas
-opcionales de críticos por tipo de arma de la p. 161 no se usan: el reglamento
-básico presenta la tabla general y el simulador conserva ese modelo.
+**Fuente:** `trollheim.pdf`, pp. 32 y 167. El reglamento también presenta tablas
+opcionales de críticos por tipo de arma en la p. 161.
 
 ## Tabla de Heridas y recuperación
 
@@ -93,7 +90,7 @@ un derribado recibe impactos automáticos y queda fuera si sufre una herida no
 salvada. No se puede derribar y rematar con los ataques restantes del mismo
 combatiente en la misma fase.
 
-**Fuente:** `trollheim.pdf`, pp. 33 y 37. **Estado:** implementado.
+**Fuente:** `trollheim.pdf`, pp. 33 y 37.
 
 ## Parada
 
@@ -102,9 +99,7 @@ enemigo no se puede parar. Solo se detiene un impacto. No se pueden parar
 ataques con Fuerza igual o superior al doble de la Fuerza básica del defensor.
 Espada más rodela permite repetir la parada; dos espadas no.
 
-**Fuente:** `trollheim.pdf`, pp. 36-37 y 51. **Estado:** parcial. Las armas con
-parada están modeladas, pero la rodela no existe y algunas armas que conceden
-doble parada solo reciben una segunda parada aproximada.
+**Fuente:** `trollheim.pdf`, pp. 36-37 y 51.
 
 ## Modificaciones prioritarias del reglamento
 
@@ -114,4 +109,4 @@ doble parada solo reciben una segunda parada aproximada.
   casco o la regla `Sin dolor`.
 - Las correcciones de campaña, disparo y reclutamiento no afectan al duelo.
 
-**Fuente:** `trollheim.pdf`, p. 179. **Estado:** implementado.
+**Fuente:** `trollheim.pdf`, p. 179.

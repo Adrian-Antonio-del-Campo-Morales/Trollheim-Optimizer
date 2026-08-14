@@ -11,11 +11,11 @@ El programa calcula estimaciones estadísticas. No sustituye al reglamento, al
 La versión portable es la opción más sencilla para Windows: consiste en un
 único archivo y no necesita instalación, Python ni compilación.
 
-[Descargar Trollheim Optimizer Portable 4.0.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v4.0.0/Trollheim-Optimizer-Portable-4.0.0.exe)
+[Descargar Trollheim Optimizer Portable 4.1.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v4.1.0/Trollheim-Optimizer-Portable-4.1.0.exe)
 
 Para utilizarla:
 
-1. Descarga `Trollheim-Optimizer-Portable-4.0.0.exe`.
+1. Descarga `Trollheim-Optimizer-Portable-4.1.0.exe`.
 2. Guarda el archivo donde quieras, por ejemplo en el escritorio o en una
    memoria USB.
 3. Haz doble clic sobre él para abrir el simulador.
@@ -37,10 +37,9 @@ repositorio antes de ejecutarlo.
 - Vistas por configuración de manos o por resultado óptimo.
 - Número de simulaciones configurable en cada análisis.
 
-La aplicación se centra exclusivamente en duelos cuerpo a cuerpo. Algunas
-reglas poco comunes todavía están pendientes o se representan mediante una
-aproximación; el detalle se mantiene en
-[`sources/text/cobertura-simulador.md`](sources/text/cobertura-simulador.md).
+El alcance, las limitaciones, las decisiones de modelado y el trabajo pendiente
+se mantienen juntos en
+[`sources/text/estado-simulador.md`](sources/text/estado-simulador.md).
 
 ## Ejecutar desde el código fuente
 

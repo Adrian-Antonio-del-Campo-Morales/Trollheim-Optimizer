@@ -46,15 +46,20 @@ def _skill_mask(skills):
             mask |= SKILL_AXE_EXPERT
         elif skill == "Golpe con el Escudo":
             mask |= SKILL_SHIELD_STRIKE
+        elif skill == "Barrido":
+            mask |= SKILL_SWEEP
     return mask
 
 
 def _armor_base_save(armor):
-    if armor == "Armadura Ligera":
+    if armor in (
+        "Armadura Ligera", "Cuero Endurecido", "Túnica de Mago",
+        "Ropajes de Ninja", "Ropajes de Asesino Eshin", "Armadura Kitinoza",
+    ):
         return 6
-    if armor == "Armadura Pesada":
+    if armor in ("Armadura Pesada", "Armadura de Ithilmar", "Capa de Dragón Marino"):
         return 5
-    if armor == "Armadura de Gromril":
+    if armor in ("Armadura de Gromril", "Armadura de Placas"):
         return 4
     return 7
 
@@ -74,26 +79,42 @@ def _make_fighter(config):
     preparation = PREPARATION_CODES.get(
         config.get("preparation", "Ninguno"), PREPARATION_NONE
     )
+    if main == WEAPON_BALL_AND_CHAIN:
+        preparation = PREPARATION_HEAD_SPLITTER
     main_poison = POISON_CODES.get(
         config.get("main_poison", "Sin veneno"), POISON_NONE
     )
     offhand_poison = POISON_CODES.get(
         config.get("offhand_poison", "Sin veneno"), POISON_NONE
     )
+    armor_name = config.get("armor", "Sin Armadura")
+    armor_code = ARMOR_CODES.get(armor_name, ARMOR_NONE)
+    has_helmet = bool(config.get("has_helmet", False))
+    if main == WEAPON_BALL_AND_CHAIN:
+        armor_name = "Sin Armadura"
+        armor_code = ARMOR_NONE
+        has_helmet = False
 
-    if (
-        _is_two_handed(main)
-        or _is_paired(main)
-        or main == WEAPON_SPEAR
-        or (main == WEAPON_CHOPPA and off != WEAPON_SPIKED_GAUNTLET)
+    if armor_code in (
+        ARMOR_HARDENED_LEATHER, ARMOR_WIZARD_ROBE, ARMOR_NINJA_GARB,
+        ARMOR_ESHIN_ROBES,
+    ) and off == OFF_SHIELD:
+        off = OFF_NONE
+    if armor_code in (ARMOR_WIZARD_ROBE, ARMOR_ESHIN_ROBES) and off == OFF_BUCKLER:
+        off = OFF_NONE
+
+    if _is_two_handed(main) or _is_paired(main):
+        off_weapon = OFF_NONE
+    elif main == WEAPON_SPEAR and off != OFF_SHIELD:
+        off_weapon = OFF_NONE
+    elif main in (WEAPON_CHOPPA, WEAPON_SQUIG_PROD) and off not in (
+        OFF_SHIELD, WEAPON_SPIKED_GAUNTLET,
     ):
         off_weapon = OFF_NONE
-    elif off != OFF_NONE and off != OFF_SHIELD:
-        off_weapon = off
     else:
-        off_weapon = OFF_NONE
+        off_weapon = off
 
-    armor_save = _armor_base_save(config.get("armor", "Sin Armadura"))
+    armor_save = _armor_base_save(armor_name)
     if off == OFF_SHIELD and not (_is_two_handed(main) or _is_paired(main)):
         armor_save -= 1
 
@@ -109,13 +130,15 @@ def _make_fighter(config):
             off_weapon,
             armor_save,
             skills,
-            int(bool(config.get("has_helmet", False))),
+            int(has_helmet),
             int(bool(config.get("has_luck_amulet", False))),
             main_material,
             offhand_material,
             preparation,
             main_poison,
             offhand_poison,
+            armor_code,
+            int(bool(config.get("disease_immune", False))),
         ],
         dtype=np.int64,
     )
@@ -180,7 +203,10 @@ def _nb_to_wound(f_att, r_def):
 
 
 def _nb_armour_save(base_save, weapon):
-    if weapon in (WEAPON_DAGGER, WEAPON_YAMBIYA, WEAPON_PIRATE_SCOURGE):
+    if weapon in (
+        WEAPON_DAGGER, WEAPON_YAMBIYA, WEAPON_PIRATE_SCOURGE,
+        WEAPON_PLAGUE_DAGGER,
+    ):
         return min(6, base_save - 1)
     return base_save
 
@@ -191,7 +217,9 @@ def _is_two_handed(weapon):
         WEAPON_PIKE, WEAPON_ELVEN_2H, WEAPON_GREAT_SCIMITAR,
         WEAPON_BRAZIER_STAFF, WEAPON_WAR_MAUL, WEAPON_DOUBLE_BLADE,
         WEAPON_SERPENT_STAFF,
-        WEAPON_KUSARA_KAMA, WEAPON_LONG_HOOK,
+        WEAPON_KUSARA_KAMA, WEAPON_LONG_HOOK, WEAPON_BO, WEAPON_DRAICH,
+        WEAPON_YARI_TWO, WEAPON_CENSER,
+        WEAPON_BALL_AND_CHAIN,
     )
 
 
@@ -199,6 +227,7 @@ def _is_paired(weapon):
     return weapon in (
         WEAPON_BAGH_NAKH, WEAPON_BRASS_KNUCKLES, WEAPON_ESHIN_CLAWS,
         WEAPON_WEEPING_BLADES,
+        WEAPON_POISONED_DAGGERS,
     )
 
 
@@ -208,6 +237,8 @@ def _weapon_has_parry(weapon):
         WEAPON_SCIMITAR, WEAPON_SWORD_BREAKER, WEAPON_DWARF_AXE,
         WEAPON_TRIDENT, WEAPON_SPIKED_GAUNTLET, WEAPON_ESHIN_CLAWS,
         WEAPON_WEEPING_BLADES, WEAPON_SERPENT_STAFF, WEAPON_WITCH_BLADE,
+        WEAPON_BO, WEAPON_UNHOLY_SWORD, WEAPON_DRAICH,
+        WEAPON_YARI_ONE, WEAPON_YARI_TWO,
     )
 
 
@@ -217,16 +248,22 @@ def _parry_profile(fighter):
     axe_parry = bool(int(fighter[9]) & SKILL_AXE_MASTER and main == WEAPON_AXE)
     sources = int(_weapon_has_parry(main) or axe_parry)
     sources += int(_weapon_has_parry(off))
+    buckler = off == OFF_BUCKLER
+    sources += int(buckler)
     if main == WEAPON_DOUBLE_BLADE:
         return 2, False
     paired_parry = main in (WEAPON_ESHIN_CLAWS, WEAPON_WEEPING_BLADES)
-    return (1 if sources or paired_parry else 0), (sources >= 2 or paired_parry)
+    return (1 if sources or paired_parry else 0), (
+        sources >= 2 or paired_parry or (buckler and _weapon_has_parry(main))
+    )
 
 
 def _weapon_attacks_first(weapon):
     return weapon in (
         WEAPON_SPEAR, WEAPON_PIKE, WEAPON_ANKUS, WEAPON_TRIDENT,
         WEAPON_CHAINED_SQUIG, WEAPON_SQUIG_PROD, WEAPON_LONG_HOOK,
+        WEAPON_YARI_TWO, WEAPON_BEASTMASTER_WHIP, WEAPON_SERPENT_WHIP,
+        WEAPON_SERPENT_STAFF,
     )
 
 
@@ -236,18 +273,28 @@ def _weapon_attacks_last(fighter):
     offhand_is_obsidian = int(fighter[7]) >= 0 and int(fighter[13]) == MATERIAL_OBSIDIAN
     if int(fighter[9]) & SKILL_STRONGMAN and _is_two_handed(weapon):
         return material == MATERIAL_OBSIDIAN or offhand_is_obsidian
-    return weapon in (WEAPON_2H, WEAPON_ELVEN_2H, WEAPON_GREAT_SCIMITAR, WEAPON_WAR_MAUL) or material == MATERIAL_OBSIDIAN or offhand_is_obsidian
+    return weapon in (
+        WEAPON_2H, WEAPON_ELVEN_2H, WEAPON_GREAT_SCIMITAR,
+        WEAPON_WAR_MAUL, WEAPON_DRAICH,
+    ) or material == MATERIAL_OBSIDIAN or offhand_is_obsidian
 
 
 def _has_frenzy_preparation(fighter):
     return int(fighter[14]) in (PREPARATION_MAD_CAP, PREPARATION_HEAD_SPLITTER)
 
 
+def _random_candidate_charges(rng, total):
+    """Sortea quién carga en cada duelo; True corresponde al candidato."""
+    return rng.random(total) < 0.5
+
+
 def _attack_count(fighter):
-    count = int(fighter[5]) + (int(fighter[7]) != OFF_NONE)
+    count = int(fighter[5]) + (int(fighter[7]) >= 0)
     if int(fighter[7]) == OFF_SHIELD:
         count = int(fighter[5]) + bool(int(fighter[9]) & SKILL_SHIELD_STRIKE)
     if _is_paired(int(fighter[6])) or int(fighter[6]) == WEAPON_DOUBLE_BLADE:
+        count += 1
+    if int(fighter[6]) in (WEAPON_BO, WEAPON_STILETTO):
         count += 1
     return count
 
@@ -268,12 +315,58 @@ def _nb_roll_d6():
 def _weapon_for_attack(fighter, attack_index):
     if attack_index < int(fighter[5]):
         return int(fighter[6])
+    if _is_paired(int(fighter[6])) or int(fighter[6]) in (
+        WEAPON_DOUBLE_BLADE, WEAPON_BO, WEAPON_STILETTO,
+    ):
+        return int(fighter[6])
     offhand = int(fighter[7])
     if offhand == OFF_SHIELD and int(fighter[9]) & SKILL_SHIELD_STRIKE:
         return WEAPON_DAGGER
     if offhand >= 0:
         return offhand
     return WEAPON_SWORD
+
+
+def _phase_attack_count(fighter, first_round, frenzy_extra=0):
+    """Ajusta las armas que sólo sirven durante el primer asalto."""
+    main = int(fighter[6])
+    off = int(fighter[7])
+    attacks = int(fighter[5])
+    pistols = (WEAPON_PISTOL, WEAPON_DUELING_PISTOL)
+    if main == WEAPON_CHAINED_SQUIG:
+        count = attacks + 1 if off >= 0 else 1
+    elif main == WEAPON_SERPENT_STAFF:
+        count = 1
+    elif main in pistols:
+        if first_round:
+            count = 2 if off in pistols else attacks + int(off >= 0)
+            if off == OFF_NONE:
+                count = 1
+        else:
+            count = attacks
+    elif off in pistols:
+        count = attacks + int(first_round)
+    else:
+        count = _attack_count(fighter)
+    return count + frenzy_extra
+
+
+def _phase_weapon_for_attack(fighter, attack_index, first_round):
+    main = int(fighter[6])
+    off = int(fighter[7])
+    attacks = int(fighter[5])
+    pistols = (WEAPON_PISTOL, WEAPON_DUELING_PISTOL)
+    if main == WEAPON_CHAINED_SQUIG:
+        return main if attack_index == 0 else (off if off >= 0 else WEAPON_DAGGER)
+    if main in pistols:
+        if not first_round:
+            return off if off >= 0 and off not in pistols else WEAPON_DAGGER
+        if off >= 0 and off not in pistols:
+            return off if attack_index < attacks else main
+        return main if attack_index == 0 else off
+    if off in pistols and attack_index >= attacks:
+        return off
+    return _weapon_for_attack(fighter, attack_index)
 
 
 def _material_for_attack(attacker, attack_index):
@@ -283,7 +376,9 @@ def _material_for_attack(attacker, attack_index):
 
 
 def _poison_for_attack(attacker, attack_index):
-    if _weapon_for_attack(attacker, attack_index) == WEAPON_WEEPING_BLADES:
+    if _weapon_for_attack(attacker, attack_index) in (
+        WEAPON_WEEPING_BLADES, WEAPON_POISONED_DAGGERS, WEAPON_SERPENT_WHIP,
+    ):
         return POISON_BLACK_LOTUS
     if attack_index >= int(attacker[5]) and int(attacker[7]) >= 0:
         return int(attacker[16])
@@ -303,6 +398,8 @@ def _attack_strength(attacker, weapon, defender_is_seasoned, first_round=True, a
     tireless = bool(int(attacker[9]) & SKILL_TIRELESS)
     if weapon in (WEAPON_2H, WEAPON_ELVEN_2H, WEAPON_GREAT_SCIMITAR, WEAPON_WAR_MAUL):
         strength += 2
+    elif weapon == WEAPON_BALL_AND_CHAIN:
+        strength += 2
     elif weapon == WEAPON_FLAIL:
         strength += 2 if first_round or tireless else 0
     elif weapon in (WEAPON_MORNING_STAR, WEAPON_HALBERD, WEAPON_BRAZIER_STAFF, WEAPON_BRASS_KNUCKLES, WEAPON_BAGH_NAKH):
@@ -313,6 +410,18 @@ def _attack_strength(attacker, weapon, defender_is_seasoned, first_round=True, a
         strength += 1 if first_round or tireless else 0
     elif weapon == WEAPON_CHAINED_SQUIG:
         strength = 3
+    elif weapon == WEAPON_SERPENT_STAFF:
+        strength = 4
+    elif weapon in (WEAPON_PISTOL, WEAPON_DUELING_PISTOL, WEAPON_SUN_GAUNTLET):
+        strength = 4
+    elif weapon in (WEAPON_ANCESTRAL_CLAW,):
+        strength += 1
+    elif weapon in (WEAPON_DRAICH,):
+        strength += 2
+    elif weapon in (WEAPON_DEATH_KNIFE, WEAPON_STILETTO):
+        strength -= 1
+    elif weapon == WEAPON_CENSER:
+        strength += 2 if first_round else 0
     elif weapon == WEAPON_WITCH_BLADE:
         strength += 1 if first_round else 0
     elif weapon == WEAPON_RAPIER:
@@ -342,6 +451,8 @@ def _extra_armour_penalty(attacker, weapon, attack_index=-1):
                   WEAPON_DWARF_AXE, WEAPON_CHOPPA, WEAPON_ESHIN_CLAWS,
                   WEAPON_KUSARA_KAMA):
         penalty += 1
+    if weapon in (WEAPON_PISTOL, WEAPON_DUELING_PISTOL):
+        penalty += 2
     material = int(attacker[12]) if attack_index < 0 else _material_for_attack(attacker, attack_index)
     if material == MATERIAL_GROMRIL:
         penalty += 1
@@ -420,6 +531,8 @@ def _recover_fighter(state, resistance=0):
 
 
 def _injury_state_from_roll(roll, weapon):
+    if weapon == WEAPON_DRAICH and 2 <= roll <= 4:
+        return STATE_STUNNED
     if weapon in (
         WEAPON_MACE, WEAPON_STONE_AXE, WEAPON_ANKUS, WEAPON_SIGMARITE_HAMMER,
     ) and 2 <= roll <= 4:
@@ -455,6 +568,14 @@ def _critical_effect(critical_roll):
 
 def _can_parry(attacker_strength, defender_basic_strength):
     return attacker_strength < 2 * defender_basic_strength
+
+
+def _should_sweep(attacker, defender, attack_count):
+    if not (int(attacker[9]) & SKILL_SWEEP) or not _is_two_handed(int(attacker[6])):
+        return False
+    fail_chance = max(1, 6 - int(defender[4])) / 6.0
+    normal_hit_chance = (7 - _nb_to_hit(int(attacker[0]), int(defender[0]))) / 6.0
+    return fail_chance > min(1.0, attack_count * normal_hit_chance)
 
 
 def _apply_damage(
@@ -499,7 +620,18 @@ def _resolve_attack_phase(
     knocked_down = defender_state == STATE_KNOCKED_DOWN
     # Un estoque puede generar ataques adicionales. Doce es el máximo útil:
     # después sólo impactaría encadenando seises como un tahúr poseído.
-    if int(attacker[6]) in (WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE) and (
+    frenzy_extra = max(0, attack_count - _attack_count(attacker))
+    attack_count = _phase_attack_count(attacker, first_round, frenzy_extra)
+    sweep = defender_state == STATE_STANDING and _should_sweep(attacker, defender, attack_count)
+    if sweep:
+        attack_count = 1
+        automatic_hits = _nb_roll_d6() > int(defender[4])
+        if not automatic_hits:
+            return defender_wounds, defender_state, defender_amulet_used
+    if int(attacker[6]) in (
+        WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE,
+        WEAPON_SERPENT_WHIP, WEAPON_BEASTMASTER_WHIP,
+    ) and (
         charging or charged
     ):
         attack_count += 1
@@ -514,13 +646,19 @@ def _resolve_attack_phase(
         if automatic_hits:
             hit_rolls[i] = 6
             hit_active[i] = 1
-            attack_weapons[i] = _weapon_for_attack(attacker, source_index)
+            attack_weapons[i] = _phase_weapon_for_attack(attacker, source_index, first_round)
         else:
             roll = _nb_roll_d6()
             hit_rolls[i] = roll
-            weapon = _weapon_for_attack(attacker, source_index)
+            weapon = _phase_weapon_for_attack(attacker, source_index, first_round)
             attack_weapons[i] = weapon
             current_hit_target = hit_target
+            if weapon == WEAPON_SERPENT_STAFF:
+                current_hit_target = _nb_to_hit(4, int(defender[0]))
+            if int(defender[6]) == WEAPON_BALL_AND_CHAIN:
+                current_hit_target = min(6, current_hit_target + 1)
+            if weapon == WEAPON_DUELING_PISTOL:
+                current_hit_target = max(2, current_hit_target - 1)
             if charging and int(attacker[9]) & SKILL_UNSTOPPABLE:
                 current_hit_target = _nb_to_hit(int(attacker[0]) + 1, int(defender[0]))
             rerolls_sword = int(attacker[9]) & SKILL_FENCER and weapon in (
@@ -538,8 +676,7 @@ def _resolve_attack_phase(
 
     parry_attempts, reroll_failed_parry = _parry_profile(defender)
     attacker_blocks_parry = int(attacker[6]) in (
-        WEAPON_WAR_MAUL, WEAPON_STEEL_WHIP, WEAPON_CHAINED_SQUIG,
-        WEAPON_PIRATE_SCOURGE,
+        WEAPON_WAR_MAUL, WEAPON_CHAINED_SQUIG,
     )
     if defender_state == STATE_STANDING and parry_attempts and not attacker_blocks_parry:
         eligible_hits = []
@@ -548,6 +685,11 @@ def _resolve_attack_phase(
             if hit_active[i] == 0:
                 continue
             weapon = int(attack_weapons[i])
+            if weapon in (
+                WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE,
+                WEAPON_SERPENT_WHIP, WEAPON_BEASTMASTER_WHIP,
+            ):
+                continue
             defender_is_seasoned = bool(int(defender[9]) & SKILL_SEASONED)
             strength = _attack_strength(attacker, weapon, defender_is_seasoned, first_round, i)
             if not _can_parry(strength, defender_basic_strength):
@@ -588,6 +730,21 @@ def _resolve_attack_phase(
             poison = POISON_NONE
         if poison == POISON_SPIDER_SPIT and _nb_roll_d6() > int(defender[2]):
             defender_state = STATE_PARALYZED
+        if weapon == WEAPON_PLAGUE_DAGGER and hit_rolls[i] == 6 and not int(defender[18]):
+            if _nb_roll_d6() > int(defender[2]):
+                defender_wounds, defender_state = _apply_damage(
+                    defender_wounds, defender_state, 1, weapon,
+                    defender_has_helmet, bool(int(defender[9]) & SKILL_SPRING_UP),
+                    False, 1, defender_used_mandrake,
+                )
+        if weapon == WEAPON_CENSER and not int(defender[18]) and _nb_roll_d6() > int(defender[2]):
+            defender_wounds, defender_state = _apply_damage(
+                defender_wounds, defender_state, 1, weapon,
+                defender_has_helmet, bool(int(defender[9]) & SKILL_SPRING_UP),
+                False, 0, defender_used_mandrake,
+            )
+        if defender_state != STATE_STANDING:
+            return defender_wounds, defender_state, defender_amulet_used
         defender_is_seasoned = bool(int(defender[9]) & SKILL_SEASONED)
         strength = _attack_strength(
             attacker, weapon, defender_is_seasoned, first_round, source_index
@@ -628,13 +785,6 @@ def _resolve_attack_phase(
             i += 1
             continue
 
-        if weapon == WEAPON_SERPENT_STAFF and _nb_roll_d6() == 6:
-            return _apply_damage(
-                defender_wounds, defender_state, 1, weapon,
-                defender_has_helmet, bool(int(defender[9]) & SKILL_SPRING_UP),
-                False, 0, defender_used_mandrake,
-            ) + (defender_amulet_used,)
-
         critical_roll_needed = 5 if poison == POISON_WOLFSBANE else 6
         critical = (
             raw_wound >= critical_roll_needed
@@ -642,18 +792,25 @@ def _resolve_attack_phase(
             and not critical_used and not rerolled_wound
         )
         damage = 1
-        ignore_armour = False
-        injury_modifier = 0
+        ignore_armour = weapon in (
+            WEAPON_SUN_GAUNTLET, WEAPON_ANCESTRAL_CLAW, WEAPON_DEATH_KNIFE,
+        )
+        injury_modifier = int(weapon == WEAPON_DEATH_KNIFE)
 
         if critical:
             critical_used = True
             critical_roll = _nb_roll_d6()
             if attacker_skills & SKILL_CHARGE:
                 critical_roll = min(6, critical_roll + 1)
+            if weapon == WEAPON_DRAICH:
+                critical_roll = min(6, critical_roll + 1)
             attack_material = _material_for_attack(attacker, source_index)
             if attack_material == MATERIAL_DARK_STEEL:
                 critical_roll = min(6, critical_roll + 1)
             damage, ignore_armour, injury_modifier = _critical_effect(critical_roll)
+        if weapon == WEAPON_BALL_AND_CHAIN:
+            damage = max(damage, (_nb_roll_d6() + 1) // 2)
+            ignore_armour = True
 
 
         if not ignore_armour:
@@ -668,9 +825,13 @@ def _resolve_attack_phase(
                 + max(0, armour_strength - 3)
                 + _extra_armour_penalty(attacker, weapon, source_index)
             )
-            if save_target <= 6 and _nb_roll_d6() >= save_target:
-                i += 1
-                continue
+            if save_target <= 6:
+                save_roll = _nb_roll_d6()
+                if save_roll < save_target and int(defender[17]) == ARMOR_ESHIN_ROBES:
+                    save_roll = _nb_roll_d6()
+                if save_roll >= save_target:
+                    i += 1
+                    continue
 
         if weapon == WEAPON_WEEPING_BLADES and _nb_roll_d6() == 6:
             damage += 1
@@ -717,6 +878,8 @@ def _combat_initiative(fighter, crimson_bonus=0):
     initiative = int(fighter[4]) + has_ithilmar + crimson_bonus
     if int(fighter[6]) in (WEAPON_BRASS_KNUCKLES, WEAPON_WAR_MAUL):
         initiative -= 2 if int(fighter[6]) == WEAPON_BRASS_KNUCKLES else 1
+    if int(fighter[6]) == WEAPON_POISONED_DAGGERS:
+        initiative += 1
     return initiative
 
 
@@ -748,6 +911,8 @@ def _simulate_one_precomputed_fast(
     crimson2 = (_nb_roll_d6() + 1) // 2 if int(enemy[14]) == PREPARATION_CRIMSON_SHADE else 0
     frenzy1 = _has_frenzy_preparation(candidate)
     frenzy2 = _has_frenzy_preparation(enemy)
+    candidate_charges = np.random.random() < 0.5
+    enemy_charges = not candidate_charges
 
     # Dos fases por ronda: una oportunidad de actuar para cada combatiente.
     for phase in range(50 * 2):
@@ -780,10 +945,13 @@ def _simulate_one_precomputed_fast(
             first2 = first_round and _weapon_attacks_first(int(enemy[6]))
             last1 = _attacks_last(candidate, stood1)
             last2 = _attacks_last(enemy, stood2)
-            enemy_uses_reflexes = bool(int(enemy[9]) & SKILL_CAT_REFLEXES)
             if phase == 0:
-                first1 = True
-                first2 = first2 or enemy_uses_reflexes
+                first1 = first1 or candidate_charges
+                first2 = first2 or enemy_charges
+                if int(candidate[9]) & SKILL_CAT_REFLEXES and enemy_charges:
+                    first1 = True
+                if int(enemy[9]) & SKILL_CAT_REFLEXES and candidate_charges:
+                    first2 = True
 
             # "Ataca último" manda incluso si otra regla concede atacar primero.
             if last1 != last2:
@@ -801,7 +969,9 @@ def _simulate_one_precomputed_fast(
             wounds2, state2, amulet2_used = _resolve_attack_phase(
                 candidate, enemy, wounds2, state2, amulet2_used,
                 hit_ce, wound_ce, save_ce, _frenzy_attack_count(candidate, frenzy1),
-                first_round, phase == 0,
+                first_round,
+                phase == 0 and candidate_charges,
+                phase == 0 and enemy_charges,
             )
             if state2 == STATE_OUT:
                 return 1.0
@@ -809,13 +979,17 @@ def _simulate_one_precomputed_fast(
                 wounds1, state1, amulet1_used = _resolve_attack_phase(
                     enemy, candidate, wounds1, state1, amulet1_used,
                     hit_ec, wound_ec, save_ec, _frenzy_attack_count(enemy, frenzy2),
-                    first_round, False, phase == 0,
+                    first_round,
+                    phase == 0 and enemy_charges,
+                    phase == 0 and candidate_charges,
                 )
         else:
             wounds1, state1, amulet1_used = _resolve_attack_phase(
                 enemy, candidate, wounds1, state1, amulet1_used,
                 hit_ec, wound_ec, save_ec, _frenzy_attack_count(enemy, frenzy2),
-                first_round, False, phase == 0,
+                first_round,
+                phase == 0 and enemy_charges,
+                phase == 0 and candidate_charges,
             )
             if state1 == STATE_OUT:
                 return 0.0
@@ -823,7 +997,9 @@ def _simulate_one_precomputed_fast(
                 wounds2, state2, amulet2_used = _resolve_attack_phase(
                     candidate, enemy, wounds2, state2, amulet2_used,
                     hit_ce, wound_ce, save_ce, _frenzy_attack_count(candidate, frenzy1),
-                    first_round, phase == 0,
+                    first_round,
+                    phase == 0 and candidate_charges,
+                    phase == 0 and enemy_charges,
                 )
 
         if state1 == STATE_OUT:
@@ -899,7 +1075,10 @@ def _vector_injury(
     rng, count, weapon, helmet, spring_up, mandrake, dark_steel, modifier,
 ):
     rolls = np.minimum(6, rng.integers(1, 7, count) + modifier)
-    if weapon in (WEAPON_MACE, WEAPON_STONE_AXE, WEAPON_ANKUS, WEAPON_SIGMARITE_HAMMER):
+    if weapon in (
+        WEAPON_MACE, WEAPON_STONE_AXE, WEAPON_ANKUS, WEAPON_SIGMARITE_HAMMER,
+        WEAPON_DRAICH,
+    ):
         states = np.where(rolls == 1, STATE_KNOCKED_DOWN,
                           np.where(rolls <= 4, STATE_STUNNED, STATE_OUT))
     else:
@@ -917,14 +1096,113 @@ def _vector_injury(
     return states
 
 
+def _vector_automatic_hit(rng, rows, defender, wounds, states, strength, weapon):
+    """Aplica un impacto automático de efectos persistentes."""
+    if rows.size == 0:
+        return
+
+    alive = rows[states[rows] != STATE_OUT]
+    if alive.size == 0:
+        return
+    wound_target = _nb_to_wound(strength, int(defender[2]))
+    wounded = rng.integers(1, 7, alive.size) >= wound_target
+    affected = alive[wounded]
+    if affected.size == 0:
+        return
+    save_target = int(defender[8]) + max(0, strength - 3)
+    if save_target <= 6:
+        saved = rng.integers(1, 7, affected.size) >= save_target
+        affected = affected[~saved]
+    if int(defender[9]) & SKILL_SIDESTEP and affected.size:
+        affected = affected[rng.integers(1, 7, affected.size) < 5]
+    if affected.size == 0:
+        return
+    damage = 2 if weapon == WEAPON_BRAZIER_STAFF and int(defender[17]) == ARMOR_CHITIN else 1
+    for _ in range(damage):
+        active = affected[states[affected] != STATE_OUT]
+        if active.size == 0:
+            break
+        wounds[active] -= 1
+        injured = active[wounds[active] <= 0]
+        if injured.size:
+            states[injured] = np.maximum(
+                states[injured],
+                _vector_injury(
+                    rng, injured.size, weapon, bool(defender[10]),
+                    bool(int(defender[9]) & SKILL_SPRING_UP),
+                    int(defender[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                ),
+            )
+
+
+def _vector_cutlass_counterattack(rng, rows, attacker, defender, wounds, states):
+    """Resuelve el puñetazo gratuito que concede una parada con alfanje."""
+    if rows.size == 0:
+        return
+    hit = rng.integers(1, 7, rows.size) >= _nb_to_hit(int(defender[0]), int(attacker[0]))
+    targets = rows[hit]
+    if targets.size == 0:
+        return
+    strength = max(1, int(defender[1]) - 1)
+    if int(attacker[9]) & SKILL_SEASONED:
+        strength = max(1, strength - 1)
+    wounded = rng.integers(1, 7, targets.size) >= _nb_to_wound(strength, int(attacker[2]))
+    targets = targets[wounded]
+    if targets.size == 0:
+        return
+    save_target = max(2, int(attacker[8]) - 1) + max(0, strength - 3)
+    if save_target <= 6:
+        targets = targets[rng.integers(1, 7, targets.size) < save_target]
+    if int(attacker[9]) & SKILL_SIDESTEP and targets.size:
+        targets = targets[rng.integers(1, 7, targets.size) < 5]
+    if targets.size:
+        wounds[targets] -= 1
+        injured = targets[wounds[targets] <= 0]
+        if injured.size:
+            states[injured] = np.maximum(
+                states[injured],
+                _vector_injury(
+                    rng, injured.size, WEAPON_DAGGER, bool(attacker[10]),
+                    bool(int(attacker[9]) & SKILL_SPRING_UP),
+                    int(attacker[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                ),
+            )
+
+
 def _vector_attack_phase(
     attacker, defender, indices, defender_wounds, defender_state,
     defender_amulet_used, rng, first_round, charging=False, charged=False,
     defender_initiative_penalty=None, attacker_frenzy=None,
+    attacker_attack_penalty=None, defender_attack_penalty=None,
+    defender_burning=None, defender_entangled=None,
+    attacker_wounds=None, attacker_state=None, attacker_weapon_broken=None,
 ):
     """Resuelve una fase para muchos duelos con los mismos combatientes."""
     if indices.size == 0:
         return
+    if attacker_weapon_broken is not None:
+        broken = indices[attacker_weapon_broken[indices] >= 0]
+        if broken.size:
+            for broken_code in np.unique(attacker_weapon_broken[broken]):
+                affected = broken[attacker_weapon_broken[broken] == broken_code]
+                improvised = attacker.copy()
+                if int(improvised[6]) == int(broken_code):
+                    improvised[6] = WEAPON_DAGGER
+                    if _is_paired(int(attacker[6])):
+                        improvised[7] = OFF_NONE
+                if int(improvised[7]) == int(broken_code):
+                    improvised[7] = OFF_NONE
+                _vector_attack_phase(
+                    improvised, defender, affected, defender_wounds, defender_state,
+                    defender_amulet_used, rng, first_round, charging, charged,
+                    defender_initiative_penalty, attacker_frenzy,
+                    attacker_attack_penalty, defender_attack_penalty,
+                    defender_burning, defender_entangled,
+                    attacker_wounds, attacker_state, None,
+                )
+            indices = indices[attacker_weapon_broken[indices] < 0]
+            if indices.size == 0:
+                return
     standing = defender_state[indices] == STATE_STANDING
     stunned = defender_state[indices] == STATE_STUNNED
     defender_state[indices[stunned]] = STATE_OUT
@@ -935,6 +1213,37 @@ def _vector_attack_phase(
     ]
     if rows.size == 0:
         return
+    if (
+        int(attacker[6]) == WEAPON_CENSER
+        and attacker_wounds is not None and attacker_state is not None
+    ):
+        backlash = rng.integers(1, 7, rows.size) == 6
+        affected = rows[backlash]
+        attacker_wounds[affected] -= 1
+        injured = affected[attacker_wounds[affected] <= 0]
+        if injured.size:
+            attacker_state[injured] = np.maximum(
+                attacker_state[injured],
+                _vector_injury(
+                    rng, injured.size, WEAPON_CENSER, bool(attacker[10]),
+                    bool(int(attacker[9]) & SKILL_SPRING_UP),
+                    int(attacker[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                ),
+            )
+        rows = rows[attacker_state[rows] == STATE_STANDING]
+        if rows.size == 0:
+            return
+
+    charging_rows = (
+        np.asarray(charging, dtype=bool)[rows]
+        if isinstance(charging, np.ndarray)
+        else np.full(rows.size, bool(charging), dtype=bool)
+    )
+    charged_rows = (
+        np.asarray(charged, dtype=bool)[rows]
+        if isinstance(charged, np.ndarray)
+        else np.full(rows.size, bool(charged), dtype=bool)
+    )
 
     automatic = np.isin(defender_state[rows], (STATE_KNOCKED_DOWN, STATE_PARALYZED))
     knocked_down = defender_state[rows] == STATE_KNOCKED_DOWN
@@ -944,10 +1253,23 @@ def _vector_attack_phase(
         else np.zeros(rows.size, dtype=bool)
     )
     frenzy_active = bool(np.any(frenzy_rows))
-    base_attack_count = _attack_count(attacker)
-    attack_count = _frenzy_attack_count(attacker, frenzy_active)
-    if int(attacker[6]) in (WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE) and (charging or charged):
+    base_attack_count = _phase_attack_count(attacker, first_round)
+    attack_count = _phase_attack_count(
+        attacker, first_round, int(attacker[5]) if frenzy_active else 0
+    )
+    if int(attacker[6]) in (
+        WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE,
+        WEAPON_SERPENT_WHIP, WEAPON_BEASTMASTER_WHIP,
+    ) and np.any(charging_rows | charged_rows):
+        base_attack_count += 1
         attack_count += 1
+    sweep = _should_sweep(attacker, defender, base_attack_count)
+    if sweep:
+        base_attack_count = 1
+        attack_count = 1
+        automatic = (
+            automatic | (rng.integers(1, 7, rows.size) > int(defender[4]))
+        )
     capacity = attack_count + 12
     hit_rolls = np.zeros((rows.size, capacity), dtype=np.int8)
     hit_active = np.zeros((rows.size, capacity), dtype=bool)
@@ -955,38 +1277,56 @@ def _vector_attack_phase(
     penalties = np.zeros(capacity, dtype=np.int8)
 
     hit_target = _nb_to_hit(int(attacker[0]), int(defender[0]))
-    if charging and int(attacker[9]) & SKILL_UNSTOPPABLE:
-        hit_target = _nb_to_hit(int(attacker[0]) + 1, int(defender[0]))
+    charge_hit_target = (
+        _nb_to_hit(int(attacker[0]) + 1, int(defender[0]))
+        if int(attacker[9]) & SKILL_UNSTOPPABLE else hit_target
+    )
     for attack in range(attack_count):
         source_index = _source_attack_index(attacker, attack)
-        weapon = _weapon_for_attack(attacker, source_index)
+        weapon = _phase_weapon_for_attack(attacker, source_index, first_round)
         weapons[attack] = weapon
         rolls = rng.integers(1, 7, rows.size)
         rolls[automatic] = 6
         reroll = np.zeros(rows.size, dtype=bool)
-        if charging and int(attacker[9]) & SKILL_FENCER and weapon in (
+        if int(attacker[9]) & SKILL_FENCER and weapon in (
             WEAPON_SWORD, WEAPON_ELVEN_2H, WEAPON_SCIMITAR, WEAPON_GREAT_SCIMITAR,
         ):
-            reroll = rolls < hit_target
-        if charging and int(attacker[9]) & SKILL_AXE_EXPERT and weapon in (
+            reroll = charging_rows & (rolls < np.where(charging_rows, charge_hit_target, hit_target))
+        if int(attacker[9]) & SKILL_AXE_EXPERT and weapon in (
             WEAPON_AXE, WEAPON_DWARF_AXE,
         ):
-            reroll = rolls < hit_target
+            reroll = charging_rows & (rolls < np.where(charging_rows, charge_hit_target, hit_target))
         rolls[reroll] = rng.integers(1, 7, int(reroll.sum()))
         hit_rolls[:, attack] = rolls
-        hit_active[:, attack] = automatic | (rolls >= hit_target)
+        current_hit_target = np.where(charging_rows, charge_hit_target, hit_target)
+        if weapon == WEAPON_SERPENT_STAFF:
+            current_hit_target[:] = _nb_to_hit(4, int(defender[0]))
+        if weapon == WEAPON_DUELING_PISTOL:
+            current_hit_target = np.maximum(2, current_hit_target - 1)
+        if int(defender[6]) == WEAPON_BALL_AND_CHAIN:
+            current_hit_target = np.minimum(6, current_hit_target + 1)
+        hit_active[:, attack] = automatic if sweep else (automatic | (rolls >= current_hit_target))
         if attack >= base_attack_count:
             hit_active[~frenzy_rows, attack] = False
+        if attacker_attack_penalty is not None and attack == attack_count - 1:
+            hit_active[attacker_attack_penalty[rows] > 0, attack] = False
 
     parry_attempts, reroll_failed_parry = _parry_profile(defender)
     blocks_parry = int(attacker[6]) in (
-        WEAPON_WAR_MAUL, WEAPON_STEEL_WHIP, WEAPON_CHAINED_SQUIG,
-        WEAPON_PIRATE_SCOURGE,
+        WEAPON_WAR_MAUL, WEAPON_CHAINED_SQUIG,
     )
     if parry_attempts and not blocks_parry:
+        any_parried = np.zeros(rows.size, dtype=bool)
+        parried_weapon = np.full(rows.size, OFF_NONE, dtype=np.int16)
         eligible = hit_active[:, :attack_count].copy()
         for attack in range(attack_count):
             source_index = _source_attack_index(attacker, attack)
+            if int(weapons[attack]) in (
+                WEAPON_STEEL_WHIP, WEAPON_PIRATE_SCOURGE,
+                WEAPON_SERPENT_WHIP, WEAPON_BEASTMASTER_WHIP,
+            ):
+                eligible[:, attack] = False
+                continue
             strength = _attack_strength(
                 attacker, int(weapons[attack]), bool(int(defender[9]) & SKILL_SEASONED),
                 first_round, source_index,
@@ -1002,6 +1342,8 @@ def _vector_attack_phase(
             failed = (best_roll > 0) & (parry_rolls <= best_roll)
             parry_rolls[failed] = rng.integers(1, 7, int(failed.sum()))
         parried = (best_roll > 0) & (parry_rolls > best_roll)
+        any_parried |= parried
+        parried_weapon[parried] = weapons[best[parried]]
         hit_active[np.arange(rows.size)[parried], best[parried]] = False
         if parry_attempts == 2:
             eligible[np.arange(rows.size), best] = False
@@ -1009,7 +1351,43 @@ def _vector_attack_phase(
             best = values.argmax(axis=1)
             best_roll = values[np.arange(rows.size), best]
             parried = (best_roll > 0) & (rng.integers(1, 7, rows.size) > best_roll)
+            any_parried |= parried
+            parried_weapon[parried] = weapons[best[parried]]
             hit_active[np.arange(rows.size)[parried], best[parried]] = False
+        if any_parried.any():
+            parry_rows = rows[any_parried]
+            if int(defender[6]) == WEAPON_CUTLASS or int(defender[7]) == WEAPON_CUTLASS:
+                if attacker_wounds is not None and attacker_state is not None:
+                    _vector_cutlass_counterattack(
+                        rng, parry_rows, attacker, defender, attacker_wounds, attacker_state
+                    )
+            if (
+                attacker_weapon_broken is not None
+                and (int(defender[6]) == WEAPON_SWORD_BREAKER
+                     or int(defender[7]) == WEAPON_SWORD_BREAKER)
+            ):
+                breaks = rng.integers(1, 7, parry_rows.size) >= 4
+                attacker_weapon_broken[parry_rows[breaks]] = parried_weapon[any_parried][breaks]
+
+    if defender_burning is not None:
+        brazier_hits = np.zeros(rows.size, dtype=bool)
+        for attack in range(attack_count):
+            if int(weapons[attack]) == WEAPON_BRAZIER_STAFF:
+                brazier_hits |= hit_active[:, attack]
+        ignited = brazier_hits & (rng.integers(1, 7, rows.size) >= 4)
+        defender_burning[rows[ignited]] = True
+    if defender_entangled is not None:
+        squig_hits = np.zeros(rows.size, dtype=bool)
+        for attack in range(attack_count):
+            if int(weapons[attack]) == WEAPON_CHAINED_SQUIG:
+                squig_hits |= hit_active[:, attack]
+        defender_entangled[rows[squig_hits]] = True
+    if defender_attack_penalty is not None:
+        hampered = np.zeros(rows.size, dtype=bool)
+        for attack in range(attack_count):
+            if int(weapons[attack]) == WEAPON_KUSARA_KAMA:
+                hampered |= hit_active[:, attack] & (hit_rolls[:, attack] >= 5)
+        defender_attack_penalty[rows[hampered]] = 1
 
     queued = attack_count
     attack = 0
@@ -1044,6 +1422,25 @@ def _vector_attack_phase(
         if poison == POISON_SPIDER_SPIT:
             paralyzed = rng.integers(1, 7, targets.size) > int(defender[2])
             defender_state[global_rows[paralyzed]] = STATE_PARALYZED
+        special_wound = np.zeros(targets.size, dtype=bool)
+        if weapon == WEAPON_PLAGUE_DAGGER and not int(defender[18]):
+            natural_six = hit_rolls[targets, attack] == 6
+            special_wound = natural_six & (
+                rng.integers(1, 7, targets.size) > int(defender[2])
+            )
+        elif weapon == WEAPON_CENSER and not int(defender[18]):
+            special_wound = rng.integers(1, 7, targets.size) > int(defender[2])
+        if special_wound.any():
+            affected = global_rows[special_wound]
+            defender_wounds[affected] -= 1
+            injured = affected[defender_wounds[affected] <= 0]
+            if injured.size:
+                defender_state[injured] = _vector_injury(
+                    rng, injured.size, weapon, bool(defender[10]),
+                    bool(int(defender[9]) & SKILL_SPRING_UP),
+                    int(defender[14]) == PREPARATION_MANDRAKE_ROOT,
+                    False, int(weapon == WEAPON_PLAGUE_DAGGER),
+                )
         strength = _attack_strength(
             attacker, weapon, bool(int(defender[9]) & SKILL_SEASONED),
             first_round, source_index
@@ -1079,7 +1476,13 @@ def _vector_attack_phase(
             if failed.size:
                 penalty = int(penalties[attack]) + 1
                 extra = rng.integers(1, 7, failed.size)
-                made = (extra == 6) | (extra >= hit_target + penalty)
+                rapier_target = np.where(
+                    charging_rows[failed], charge_hit_target, hit_target
+                ) + penalty
+                if int(defender[6]) == WEAPON_BALL_AND_CHAIN:
+                    rapier_target += 1
+                rapier_target = np.minimum(6, rapier_target)
+                made = (extra == 6) | (extra >= rapier_target)
                 if made.any():
                     hit_rolls[failed[made], queued] = extra[made]
                     hit_active[failed[made], queued] = True
@@ -1095,26 +1498,6 @@ def _vector_attack_phase(
             continue
         global_rows = rows[targets]
 
-        if weapon == WEAPON_SERPENT_STAFF:
-            instant = rng.integers(1, 7, targets.size) == 6
-            if instant.any():
-                instant_rows = global_rows[instant]
-                defender_wounds[instant_rows] -= 1
-                injured = instant_rows[defender_wounds[instant_rows] <= 0]
-                if injured.size:
-                    defender_state[injured] = _vector_injury(
-                        rng, injured.size, weapon, bool(defender[10]),
-                        bool(int(defender[9]) & SKILL_SPRING_UP),
-                        int(defender[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
-                    )
-                targets = targets[~instant]
-                wound_rolls = wound_rolls[~instant]
-                lotus = lotus[~instant]
-                global_rows = rows[targets]
-                if targets.size == 0:
-                    attack += 1
-                    continue
-
         critical_needed = 5 if poison == POISON_WOLFSBANE else 6
         critical = (
             (wound_rolls >= critical_needed) & (lotus | (wound_target < 6))
@@ -1122,17 +1505,28 @@ def _vector_attack_phase(
         )
         critical_used[targets[critical]] = True
         damage = np.ones(targets.size, dtype=np.int8)
-        ignore_armour = np.zeros(targets.size, dtype=bool)
-        injury_modifier = np.zeros(targets.size, dtype=np.int8)
+        ignore_armour = np.full(
+            targets.size,
+            weapon in (WEAPON_SUN_GAUNTLET, WEAPON_ANCESTRAL_CLAW, WEAPON_DEATH_KNIFE),
+            dtype=bool,
+        )
+        injury_modifier = np.full(
+            targets.size, int(weapon == WEAPON_DEATH_KNIFE), dtype=np.int8
+        )
         if critical.any():
             rolls = rng.integers(1, 7, int(critical.sum()))
             if int(attacker[9]) & SKILL_CHARGE:
+                rolls = np.minimum(6, rolls + 1)
+            if weapon == WEAPON_DRAICH:
                 rolls = np.minimum(6, rolls + 1)
             if _material_for_attack(attacker, source_index) == MATERIAL_DARK_STEEL:
                 rolls = np.minimum(6, rolls + 1)
             damage[critical] = 2
             ignore_armour[critical] = rolls >= 3
             injury_modifier[critical] = np.where(rolls >= 5, 2, 0)
+        if weapon == WEAPON_BALL_AND_CHAIN:
+            damage = np.maximum(damage, rng.integers(1, 4, targets.size))
+            ignore_armour[:] = True
 
         armour_strength = _armour_strength(attacker, weapon, first_round, source_index)
         if (
@@ -1148,6 +1542,11 @@ def _vector_attack_phase(
         saved = np.zeros(targets.size, dtype=bool)
         can_save = ~ignore_armour & (save_target <= 6)
         saved[can_save] = rng.integers(1, 7, int(can_save.sum())) >= save_target
+        if int(defender[17]) == ARMOR_ESHIN_ROBES:
+            reroll_save = can_save & ~saved
+            saved[reroll_save] = (
+                rng.integers(1, 7, int(reroll_save.sum())) >= save_target
+            )
         targets = targets[~saved]
         damage = damage[~saved]
         injury_modifier = injury_modifier[~saved]
@@ -1221,13 +1620,41 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
     initiative_penalty2 = np.zeros(total, dtype=np.int8)
     frenzy1 = np.full(total, _has_frenzy_preparation(candidate), dtype=bool)
     frenzy2 = np.full(total, _has_frenzy_preparation(enemy), dtype=bool)
+    attack_penalty1 = np.zeros(total, dtype=np.int8)
+    attack_penalty2 = np.zeros(total, dtype=np.int8)
+    burning1 = np.zeros(total, dtype=bool)
+    burning2 = np.zeros(total, dtype=bool)
+    entangled1 = np.zeros(total, dtype=bool)
+    entangled2 = np.zeros(total, dtype=bool)
+    broken1 = np.full(total, -999, dtype=np.int16)
+    broken2 = np.full(total, -999, dtype=np.int16)
+    candidate_charges = _random_candidate_charges(rng, total)
+    enemy_charges = ~candidate_charges
 
     for phase in range(100):
         unresolved = (state1 != STATE_OUT) & (state2 != STATE_OUT)
         if not unresolved.any():
             break
         candidate_turn = phase % 2 == 0
+        skip1 = np.zeros(total, dtype=bool)
+        skip2 = np.zeros(total, dtype=bool)
         if candidate_turn:
+            attack_penalty2[:] = 0
+            active_fire = unresolved & burning1
+            extinguished = active_fire & (rng.integers(1, 7, total) >= 4)
+            burning1[extinguished] = False
+            failed_fire = active_fire & ~extinguished
+            skip1[failed_fire] = True
+            _vector_automatic_hit(
+                rng, np.flatnonzero(failed_fire), candidate, wounds1, state1,
+                4, WEAPON_BRAZIER_STAFF,
+            )
+            valid_squig = entangled2 & (state1 == STATE_STANDING)
+            entangled2 &= state1 == STATE_STANDING
+            _vector_automatic_hit(
+                rng, np.flatnonzero(valid_squig), enemy, wounds2, state2,
+                3, WEAPON_CHAINED_SQUIG,
+            )
             paralyzed = unresolved & (state1 == STATE_PARALYZED)
             recovered = paralyzed & (rng.integers(1, 7, total) <= int(candidate[2]))
             state1[recovered] = STATE_STANDING
@@ -1238,6 +1665,22 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
             stood1 = knocked
             stood2 = np.zeros(total, dtype=bool)
         else:
+            attack_penalty1[:] = 0
+            active_fire = unresolved & burning2
+            extinguished = active_fire & (rng.integers(1, 7, total) >= 4)
+            burning2[extinguished] = False
+            failed_fire = active_fire & ~extinguished
+            skip2[failed_fire] = True
+            _vector_automatic_hit(
+                rng, np.flatnonzero(failed_fire), enemy, wounds2, state2,
+                4, WEAPON_BRAZIER_STAFF,
+            )
+            valid_squig = entangled1 & (state2 == STATE_STANDING)
+            entangled1 &= state2 == STATE_STANDING
+            _vector_automatic_hit(
+                rng, np.flatnonzero(valid_squig), candidate, wounds1, state1,
+                3, WEAPON_CHAINED_SQUIG,
+            )
             paralyzed = unresolved & (state2 == STATE_PARALYZED)
             recovered = paralyzed & (rng.integers(1, 7, total) <= int(enemy[2]))
             state2[recovered] = STATE_STANDING
@@ -1248,17 +1691,32 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
             stood2 = knocked
             stood1 = np.zeros(total, dtype=bool)
 
-        both = unresolved & (state1 == STATE_STANDING) & (state2 == STATE_STANDING)
-        only1 = unresolved & (state1 == STATE_STANDING) & ~both
-        only2 = unresolved & (state2 == STATE_STANDING) & ~both
+        unresolved = (state1 != STATE_OUT) & (state2 != STATE_OUT)
+        standing1 = (state1 == STATE_STANDING) & ~skip1
+        standing2 = (state2 == STATE_STANDING) & ~skip2
+        both = unresolved & standing1 & standing2
+        only1 = unresolved & standing1 & ~both
+        only2 = unresolved & standing2 & ~both
         first_is_candidate = only1.copy()
         first_round = phase < 2
         if both.any():
-            first1 = first_round and _weapon_attacks_first(int(candidate[6]))
-            first2 = first_round and _weapon_attacks_first(int(enemy[6]))
+            first1 = np.full(
+                total,
+                first_round and _weapon_attacks_first(int(candidate[6])),
+                dtype=bool,
+            )
+            first2 = np.full(
+                total,
+                first_round and _weapon_attacks_first(int(enemy[6])),
+                dtype=bool,
+            )
             if phase == 0:
-                first1 = True
-                first2 = first2 or bool(int(enemy[9]) & SKILL_CAT_REFLEXES)
+                first1 |= candidate_charges
+                first2 |= enemy_charges
+                if int(candidate[9]) & SKILL_CAT_REFLEXES:
+                    first1 |= enemy_charges
+                if int(enemy[9]) & SKILL_CAT_REFLEXES:
+                    first2 |= candidate_charges
             last1 = _weapon_attacks_last(candidate)
             last2 = _weapon_attacks_last(enemy)
             last1_rows = last1 | stood1
@@ -1267,10 +1725,10 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
             decided2 = both & last1_rows & ~last2_rows
             first_is_candidate[decided1] = True
             undecided = both & ~(decided1 | decided2)
-            if first1 != first2:
-                if first1:
-                    first_is_candidate[undecided] = True
-                undecided[:] = False
+            priority1 = undecided & first1 & ~first2
+            priority2 = undecided & first2 & ~first1
+            first_is_candidate[priority1] = True
+            undecided &= ~(priority1 | priority2)
             if undecided.any():
                 i1 = np.maximum(
                     1, _combat_initiative(candidate) + crimson1 - initiative_penalty1
@@ -1286,28 +1744,48 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
         first2_rows = np.flatnonzero(unresolved & ~first_is_candidate)
         _vector_attack_phase(
             candidate, enemy, first1_rows, wounds2, state2, amulet2, rng,
-            first_round, phase == 0, False, initiative_penalty2, frenzy1,
+            first_round,
+            candidate_charges if phase == 0 else False,
+            enemy_charges if phase == 0 else False,
+            initiative_penalty2, frenzy1,
+            attack_penalty1, attack_penalty2, burning2, entangled2,
+            wounds1, state1, broken1,
         )
         frenzy2[(state2 == STATE_KNOCKED_DOWN) | (state2 == STATE_STUNNED)] = False
-        reply2 = first1_rows[(state2[first1_rows] == STATE_STANDING)]
+        reply2 = first1_rows[(state2[first1_rows] == STATE_STANDING) & ~skip2[first1_rows]]
         if _prevents_first_reply(candidate, first_round):
             reply2 = np.empty(0, dtype=np.int64)
         _vector_attack_phase(
             enemy, candidate, reply2, wounds1, state1, amulet1, rng,
-            first_round, False, phase == 0, initiative_penalty1, frenzy2,
+            first_round,
+            enemy_charges if phase == 0 else False,
+            candidate_charges if phase == 0 else False,
+            initiative_penalty1, frenzy2,
+            attack_penalty2, attack_penalty1, burning1, entangled1,
+            wounds2, state2, broken2,
         )
         frenzy1[(state1 == STATE_KNOCKED_DOWN) | (state1 == STATE_STUNNED)] = False
         _vector_attack_phase(
             enemy, candidate, first2_rows, wounds1, state1, amulet1, rng,
-            first_round, False, phase == 0, initiative_penalty1, frenzy2,
+            first_round,
+            enemy_charges if phase == 0 else False,
+            candidate_charges if phase == 0 else False,
+            initiative_penalty1, frenzy2,
+            attack_penalty2, attack_penalty1, burning1, entangled1,
+            wounds2, state2, broken2,
         )
         frenzy1[(state1 == STATE_KNOCKED_DOWN) | (state1 == STATE_STUNNED)] = False
-        reply1 = first2_rows[(state1[first2_rows] == STATE_STANDING)]
+        reply1 = first2_rows[(state1[first2_rows] == STATE_STANDING) & ~skip1[first2_rows]]
         if _prevents_first_reply(enemy, first_round):
             reply1 = np.empty(0, dtype=np.int64)
         _vector_attack_phase(
             candidate, enemy, reply1, wounds2, state2, amulet2, rng,
-            first_round, phase == 0, False, initiative_penalty2, frenzy1,
+            first_round,
+            candidate_charges if phase == 0 else False,
+            enemy_charges if phase == 0 else False,
+            initiative_penalty2, frenzy1,
+            attack_penalty1, attack_penalty2, burning2, entangled2,
+            wounds1, state1, broken1,
         )
         frenzy2[(state2 == STATE_KNOCKED_DOWN) | (state2 == STATE_STUNNED)] = False
 
@@ -1331,6 +1809,7 @@ def _random_enemy_config(name, level, rng):
     equipment = profile["equipment"]
     config = {key: profile[key] for key in ("HA", "F", "R", "H", "I", "A")}
     config["skills"] = list(profile.get("skills", []))
+    config["disease_immune"] = name in {"Zombi", "Esqueleto", "Vampiro", "Poseído"}
     config["main_weapon"] = _weighted_choice(rng, equipment["main"])
     config["off_hand"] = _weighted_choice(rng, equipment["off"])
     config["armor"] = _weighted_choice(rng, equipment["armor"])

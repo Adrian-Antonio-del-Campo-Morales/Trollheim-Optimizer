@@ -8,6 +8,7 @@ from trollheim_simulator.engine import (
     _build_enemy_variants,
     _generate_shared_enemy_selection,
     _random_enemy_config,
+    _random_candidate_charges,
     effective_fighter_key,
     run_single_task_optimized,
 )
@@ -39,6 +40,15 @@ def test_shared_enemy_selection_is_reproducible_and_valid():
     assert np.array_equal(first, second)
     assert first.min() >= 0
     assert first.max() < len(names)
+
+
+def test_first_turn_charge_is_drawn_per_duel_and_is_balanced():
+    first = _random_candidate_charges(np.random.default_rng(2026), 100_000)
+    second = _random_candidate_charges(np.random.default_rng(2026), 100_000)
+    assert np.array_equal(first, second)
+    assert first.dtype == np.bool_
+    assert 0.49 < first.mean() < 0.51
+    assert first.any() and (~first).any()
 
 
 def test_worker_runs_a_small_custom_matchup():
@@ -86,7 +96,7 @@ def test_random_enemy_equipment_is_legal_and_levels_are_applied():
 
 def test_enemy_variants_have_expected_shape():
     enemies, owners = _build_enemy_variants(["Zombi", "Vampiro"], 2, 123, 5)
-    assert enemies.shape == (10, 17)
+    assert enemies.shape == (10, 19)
     assert owners.tolist() == [0] * 5 + [1] * 5
 
 
@@ -243,6 +253,14 @@ def test_weapons_that_demand_attention_do_not_get_a_second_weapon():
         mode == "Dual" and main in {"Lanza", "Rebanadora", "Pinchagarrapatos"}
         for mode, main, _off in loadouts
     )
+
+
+def test_spiked_gauntlet_is_the_exception_for_difficult_weapons():
+    loadouts = TrollheimApp._weapon_loadouts(
+        ["Rebanadora", "Pinchagarrapatos", "Guantelete con Pincho"]
+    )
+    assert ("Dual", "Rebanadora", "Guantelete con Pincho") in loadouts
+    assert ("Dual", "Pinchagarrapatos", "Guantelete con Pincho") in loadouts
 
 
 def test_two_poisons_are_applied_one_to_each_hand():

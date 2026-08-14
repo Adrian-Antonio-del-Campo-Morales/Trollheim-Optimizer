@@ -1,8 +1,7 @@
-# Referencia de reglas del simulador
+# Referencia de reglas de combate
 
-Resumen temático de las reglas que pueden alterar un duelo cuerpo a cuerpo en
-el simulador. Se han eliminado trasfondo, relatos, escenarios, magia, disparo,
-psicología, campaña y reglas de banda sin efecto directo sobre el duelo.
+Resumen temático de las reglas que pueden alterar un duelo cuerpo a cuerpo.
+Se han eliminado trasfondo, relatos y otros contenidos ajenos a estas fichas.
 
 Los PDF originales siguen siendo la fuente canónica. Cada regla incluye la
 página física del PDF para poder comprobar tablas o texto dudoso del OCR. Los
@@ -16,9 +15,9 @@ manuales deben aportarse por separado: no se distribuyen con el repositorio.
   materiales, venenos y objetos relevantes.
 - [Consumibles](consumibles.md): drogas, antídotos y venenos que se aplican
   directamente al duelo.
-- [Habilidades](habilidades.md): mejoras elegibles que afectan al duelo.
-- [Cobertura del simulador](cobertura-simulador.md): qué está implementado,
-  qué falta y qué se ha descartado por alcance.
+- [Habilidades](habilidades.md): habilidades relacionadas con el combate.
+- [Estado del simulador](estado-simulador.md): cobertura, decisiones de
+  implementación, limitaciones y trabajo pendiente.
 
 ## Volcados completos locales
 
@@ -43,15 +42,6 @@ aparecer más adelante en el entorno local.
 rg -n -i "texto a buscar" sources\text
 ```
 
-## Convenciones
-
-- **Fuente:** `manual.pdf`, página PDF física.
-- **Implementado:** existe una mecánica específica en el motor.
-- **Parcial:** está disponible, pero falta alguna parte relevante de su regla.
-- **Ausente:** la regla es pertinente para el simulador y no está representada.
-- **Fuera de alcance:** requiere terreno, varios combatientes, magia,
-  psicología, monturas, campaña o decisiones tácticas que el duelo actual no
-  modela.
-
-Las reglas resumidas están redactadas para consulta y programación; no son una
-transcripción literal del manual.
+Las reglas resumidas son material de consulta, no una transcripción literal.
+Su relación con la aplicación se documenta exclusivamente en
+`estado-simulador.md`.

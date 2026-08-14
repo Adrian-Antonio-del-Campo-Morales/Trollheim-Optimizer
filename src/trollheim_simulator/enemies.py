@@ -18,11 +18,14 @@ def _profile(difficulty, weight, bands, equipment, **stats):
 COMMON_HUMAN = {
     "main": [("Daga", 2, 0), ("Maza", 3, 0), ("Hacha", 5, 0),
              ("Espada", 10, 0), ("Lanza", 10, 0), ("Alabarda", 10, 0),
-             ("Arma 2H", 15, 0), ("Mayal", 15, 0)],
+             ("Arma 2H", 15, 0), ("Mayal", 15, 0), ("Pistola", 15, 0),
+             ("Pistola de Duelo", 30, 10)],
     "off": [("Ninguna", 0, 0), ("Daga", 2, 0), ("Maza", 3, 0),
-            ("Hacha", 5, 0), ("Espada", 10, 0), ("Escudo", 5, 0)],
+            ("Hacha", 5, 0), ("Espada", 10, 0), ("Escudo", 5, 0),
+            ("Rodela", 5, 0), ("Pistola", 15, 0)],
     "armor": [("Sin Armadura", 0, 0), ("Armadura Ligera", 20, 0),
-              ("Armadura Pesada", 50, 0)],
+              ("Armadura Pesada", 50, 0), ("Armadura de Ithilmar", 90, 11),
+              ("Armadura de Placas", 80, 9)],
     "helmet": (10, 0),
     "consumables": [
         ("preparation", "Sombra Carmesí", 39, 8),
@@ -53,10 +56,13 @@ DWARF = {
 SKAVEN = {
     "main": [("Daga", 2, 0), ("Maza", 3, 0), ("Espada", 10, 0),
              ("Lanza", 10, 0), ("Garras de Combate Eshin", 35, 8),
-             ("Espadas Supurantes", 50, 10)],
+             ("Espadas Supurantes", 50, 10), ("Daga de Ponzoña", 10, 6),
+             ("Incensario", 40, 9), ("Yari (una mano)", 10, 6),
+             ("Yari (dos manos)", 15, 7), ("Cuchillo de Muerte", 20, 8)],
     "off": [("Ninguna", 0, 0), ("Daga", 2, 0), ("Espada", 10, 0),
             ("Escudo", 5, 0)],
-    "armor": [("Sin Armadura", 0, 0), ("Armadura Ligera", 20, 0)],
+    "armor": [("Sin Armadura", 0, 0), ("Armadura Ligera", 20, 0),
+              ("Ropajes de Asesino Eshin", 50, 10)],
     "helmet": (10, 0),
     "consumables": [
         ("poison", "Loto Negro", 14, 7),
@@ -81,6 +87,11 @@ ORC = {
         ("poison", "Veneno Negro", 37, 6),
         ("poison", "Toxina del Diablo", 22, 7),
     ],
+}
+
+GOBLIN = {
+    **ORC,
+    "main": [*ORC["main"], ("Bola con Kadena", 15, 0)],
 }
 
 SIGMAR = {
@@ -134,7 +145,7 @@ ENEMY_PROFILES = {
         HA=3, F=3, R=3, H=1, I=3, A=1),
     "Zelote o fanático novato": _profile("Baja", 13, 6, LIGHT_HUMAN,
         HA=2, F=3, R=3, H=1, I=3, A=1),
-    "Goblin": _profile("Baja", 18, 5, ORC,
+    "Goblin": _profile("Baja", 18, 5, GOBLIN,
         HA=2, F=3, R=3, H=1, I=3, A=1),
     "Eslizón": _profile("Baja", 14, 3, LIZARD,
         HA=2, F=3, R=2, H=1, I=4, A=1),
