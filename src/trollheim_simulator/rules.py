@@ -242,38 +242,41 @@ WEAPONS_EXCLUSIVE = [
 
 WEAPONS_MAIN = [*WEAPONS_GENERAL, *WEAPONS_EXCLUSIVE]
 
+TWO_HANDED_WEAPONS = {
+    "Arma 2H", "Mayal", "Alabarda", "Guadaña", "Pica",
+    "Espada Élfica 2H", "Gran Cimitarra", "Vara Brasero",
+    "Mazo de Guerra", "Espada de Doble Hoja", "Báculo de Serpiente",
+    "Kusara Kama", "Garfio Largo", "Bo", "Draich", "Yari (dos manos)",
+    "Incensario", "Bola con Kadena",
+}
+
+PAIRED_WEAPONS = {
+    "Bagh Nakh", "Puños de Bronce", "Garras de Combate Eshin",
+    "Espadas Supurantes", "Dagas Envenenadas",
+}
+
+# El mangual exige atención completa y no puede ir acompañado de otra arma ni
+# rodelas. La lanza solo admite escudo o rodela. Rebanadora y Pinchagarrapatos
+# tienen su propia excepción con escudo o guantelete.
+OFFHAND_RESTRICTED_WEAPONS = {
+    *TWO_HANDED_WEAPONS,
+    *PAIRED_WEAPONS,
+    "Mangual",
+    "Lanza",
+    "Rebanadora",
+    "Pinchagarrapatos",
+}
+
 OFFHAND_GENERAL = [
     "Ninguna",
     "Escudo",
-    "Daga",
-    "Espada",
-    "Maza",
-    "Hacha",
-    "Estoque",
-    "Yambiya",
-    "Katar",
-    "Alfanje",
-    "Cimitarra",
-    "Pistola",
-    "Pistola de Duelo",
     "Rodela",
+    *(weapon for weapon in WEAPONS_GENERAL if weapon not in OFFHAND_RESTRICTED_WEAPONS),
 ]
 
 OFFHAND_EXCLUSIVE = [
     "Ninguna",
-    "Rompe Espadas",
-    "Hacha Enana",
-    "Guantelete con Pincho",
-    "Espada Bruja",
-    "Látigo Ofidio",
-    "Látigo de Señor de las Bestias",
-    "Guantelete Solar",
-    "Espada de Transformación Impía",
-    "Estilete",
-    "Garra de los Ancestrales",
-    "Yari (una mano)",
-    "Cuchillo de Muerte",
-    "Daga de Ponzoña",
+    *(weapon for weapon in WEAPONS_EXCLUSIVE if weapon not in OFFHAND_RESTRICTED_WEAPONS),
 ]
 
 OFF_HAND_OPTIONS = list(dict.fromkeys([*OFFHAND_GENERAL, *OFFHAND_EXCLUSIVE]))
@@ -547,46 +550,14 @@ OFFHAND_CODES = {
     "Ninguna": OFF_NONE,
     "Escudo": OFF_SHIELD,
     "Rodela": OFF_BUCKLER,
-    "Daga": OFF_DAGGER,
-    "Espada": OFF_SWORD,
-    "Maza": OFF_MACE,
-    "Hacha": WEAPON_AXE,
-    "Estoque": WEAPON_RAPIER,
-    "Yambiya": WEAPON_YAMBIYA,
-    "Katar": WEAPON_KATAR,
-    "Alfanje": WEAPON_CUTLASS,
-    "Cimitarra": WEAPON_SCIMITAR,
-    "Rompe Espadas": WEAPON_SWORD_BREAKER,
-    "Hacha Enana": WEAPON_DWARF_AXE,
-    "Guantelete con Pincho": WEAPON_SPIKED_GAUNTLET,
-    "Espada Bruja": WEAPON_WITCH_BLADE,
-    "Pistola": WEAPON_PISTOL,
-    "Pistola de Duelo": WEAPON_DUELING_PISTOL,
-    "Látigo Ofidio": WEAPON_SERPENT_WHIP,
-    "Látigo de Señor de las Bestias": WEAPON_BEASTMASTER_WHIP,
-    "Guantelete Solar": WEAPON_SUN_GAUNTLET,
-    "Espada de Transformación Impía": WEAPON_UNHOLY_SWORD,
-    "Estilete": WEAPON_STILETTO,
-    "Garra de los Ancestrales": WEAPON_ANCESTRAL_CLAW,
-    "Yari (una mano)": WEAPON_YARI_ONE,
-    "Cuchillo de Muerte": WEAPON_DEATH_KNIFE,
-    "Daga de Ponzoña": WEAPON_PLAGUE_DAGGER,
 }
-
-TWO_HANDED_WEAPONS = {
-    "Arma 2H", "Mayal", "Alabarda", "Guadaña", "Pica",
-    "Espada Élfica 2H", "Gran Cimitarra", "Vara Brasero",
-    "Mazo de Guerra", "Espada de Doble Hoja",
-    "Kusara Kama", "Garfio Largo",
-    "Bo", "Draich", "Yari (dos manos)", "Incensario",
-    "Bola con Kadena",
-}
-
-PAIRED_WEAPONS = {
-    "Bagh Nakh", "Puños de Bronce", "Garras de Combate Eshin",
-    "Espadas Supurantes",
-    "Dagas Envenenadas",
-}
+OFFHAND_CODES.update(
+    {
+        weapon: WEAPON_CODES[weapon]
+        for weapon in OFF_HAND_OPTIONS
+        if weapon not in OFFHAND_CODES
+    }
+)
 
 MATERIAL_CODES = {
     "Sin material": MATERIAL_NORMAL,

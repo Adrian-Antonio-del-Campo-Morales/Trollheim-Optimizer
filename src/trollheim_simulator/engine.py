@@ -105,6 +105,8 @@ def _make_fighter(config):
 
     if _is_two_handed(main) or _is_paired(main):
         off_weapon = OFF_NONE
+    elif main == WEAPON_MORNING_STAR and off != OFF_SHIELD:
+        off_weapon = OFF_NONE
     elif main == WEAPON_SPEAR and off != OFF_SHIELD:
         off_weapon = OFF_NONE
     elif main in (WEAPON_CHOPPA, WEAPON_SQUIG_PROD) and off not in (

@@ -548,6 +548,12 @@ class WarriorConfigFrame(ttk.LabelFrame):
         off_disabled = main_weapon in TWO_HANDED_WEAPONS or main_weapon in PAIRED_WEAPONS
 
         if main_weapon == "Lanza":
+            self.cb_offhand.config(values=("Ninguna", "Escudo", "Rodela"))
+            self.cb_off_exclusive.config(state="disabled")
+            self.eq_off_exclusive.set("Ninguna")
+            if self.eq_off_general.get() not in ("Ninguna", "Escudo", "Rodela"):
+                self.eq_off_general.set("Ninguna")
+        elif main_weapon == "Mangual":
             self.cb_offhand.config(values=("Ninguna", "Escudo"))
             self.cb_off_exclusive.config(state="disabled")
             self.eq_off_exclusive.set("Ninguna")
@@ -1236,7 +1242,10 @@ class TrollheimApp(tk.Tk):
             visible, fixed = self.weapon_visible_modes, ("Main", "Off")
 
         if view_var.get() == "optimal":
-            tree.configure(displaycolumns=(*fixed, "Optimal", "Equipment"))
+            optimal_columns = (*fixed, "Optimal")
+            if target != "weapons":
+                optimal_columns += ("Equipment",)
+            tree.configure(displaycolumns=optimal_columns)
         else:
             tree.configure(
                 displaycolumns=(
@@ -1901,6 +1910,8 @@ class TrollheimApp(tk.Tk):
             loadouts.append(("Single", weapon, "Ninguna"))
             loadouts.append(("Shield", weapon, "Escudo"))
         for main in one_handed:
+            if main == "Mangual":
+                continue
             if main in {"Rebanadora", "Pinchagarrapatos"}:
                 if "Guantelete con Pincho" in offhand:
                     loadouts.append(("Dual", main, "Guantelete con Pincho"))
