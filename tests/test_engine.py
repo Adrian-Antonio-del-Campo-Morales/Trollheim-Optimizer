@@ -233,6 +233,7 @@ def test_weapon_loadouts_cover_the_four_hand_configurations():
     assert ("Single", "Espada", "Ninguna") in loadouts
     assert ("Shield", "Espada", "Escudo") in loadouts
     assert ("Dual", "Espada", "Maza") in loadouts
+    assert ("Dual", "Maza", "Espada") in loadouts
     assert ("TwoHand", "Arma 2H", "Ninguna") in loadouts
     assert ("TwoHand", "Bagh Nakh", "Ninguna") in loadouts
 
@@ -247,10 +248,10 @@ def test_two_handed_weapons_are_not_generated_as_dual_combinations():
 
 def test_weapons_that_demand_attention_do_not_get_a_second_weapon():
     loadouts = TrollheimApp._weapon_loadouts(
-        ["Lanza", "Rebanadora", "Pinchagarrapatos", "Daga"]
+        ["Lanza", "Mangual", "Rebanadora", "Pinchagarrapatos", "Daga"]
     )
     assert not any(
-        mode == "Dual" and main in {"Lanza", "Rebanadora", "Pinchagarrapatos"}
+        mode == "Dual" and main in {"Lanza", "Mangual", "Rebanadora", "Pinchagarrapatos"}
         for mode, main, _off in loadouts
     )
 

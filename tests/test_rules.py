@@ -45,6 +45,7 @@ from trollheim_simulator.rules import (
     WEAPONS_EXCLUSIVE,
     WEAPONS_GENERAL,
     OFF_HAND_OPTIONS,
+    OFFHAND_RESTRICTED_WEAPONS,
     WEAPON_CODES,
     OFFHAND_CODES,
     ARMORS,
@@ -144,6 +145,14 @@ def test_weapon_catalog_is_split_without_duplicates():
     assert set(ARMORS) == set(ARMOR_CODES)
 
 
+def test_all_one_handed_weapons_are_available_in_the_off_hand():
+    expected = set(WEAPONS_GENERAL + WEAPONS_EXCLUSIVE) - OFFHAND_RESTRICTED_WEAPONS
+    assert expected == set(OFF_HAND_OPTIONS) - {"Ninguna", "Escudo", "Rodela"}
+    assert "Látigo de Acero" in OFFHAND_CODES
+    assert "Mangual" not in OFFHAND_CODES
+    assert "Báculo de Serpiente" not in OFFHAND_CODES
+
+
 def test_band_weapons_apply_their_core_mechanics():
     hammer = _make_fighter(BASE_FIGHTER | {"main_weapon": "Martillo Sigmarita"})
     choppa = _make_fighter(BASE_FIGHTER | {"main_weapon": "Rebanadora"})
@@ -174,6 +183,21 @@ def test_revised_spear_and_two_handed_shield_rules():
         BASE_FIGHTER | {"main_weapon": "Lanza", "off_hand": "Escudo"}
     )[8] == 6
     assert two_handed[8] == 7
+
+
+def test_morning_star_only_accepts_a_shield_in_the_other_hand():
+    invalid = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Mangual", "off_hand": "Espada"}
+    )
+    shield = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Mangual", "off_hand": "Escudo"}
+    )
+    buckler = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Mangual", "off_hand": "Rodela"}
+    )
+    assert invalid[7] == OFF_NONE
+    assert shield[7] == OFF_SHIELD
+    assert buckler[7] == OFF_NONE
 
 
 def test_corrected_exclusive_weapon_hand_rules():
