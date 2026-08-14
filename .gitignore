@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.idea/
+.vscode/
+build/
+dist/
+*.spec
+Trollheim_startup_error.txt
+
+# Los manuales y sus volcados completos son material de consulta local.
+# No los publiques por accidente: además de pesar un huevo, no son nuestros.
+sources/*.pdf
+sources/text/caos-en-las-calles.md
+sources/text/khemri.md
+sources/text/lustria.md
+sources/text/trollheim.md

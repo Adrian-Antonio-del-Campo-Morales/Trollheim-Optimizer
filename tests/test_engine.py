@@ -1,0 +1,283 @@
+import queue
+import time
+
+import numpy as np
+
+from trollheim_simulator.engine import (
+    ENEMY_VARIANTS_PER_PROFILE,
+    _build_enemy_variants,
+    _generate_shared_enemy_selection,
+    _random_enemy_config,
+    effective_fighter_key,
+    run_single_task_optimized,
+)
+from trollheim_simulator.enemies import ENEMY_PROFILES
+from trollheim_simulator.rules import NORMAL_ENEMIES_DATABASE, TWO_HANDED_WEAPONS
+from trollheim_simulator.ui import DEFAULT_COMBO_SIMULATIONS, TrollheimApp
+
+
+FIGHTER = {
+    "HA": 4,
+    "F": 3,
+    "R": 3,
+    "H": 1,
+    "I": 4,
+    "A": 1,
+    "skills": [],
+    "main_weapon": "Espada",
+    "off_hand": "Ninguna",
+    "has_helmet": False,
+    "has_luck_amulet": False,
+    "armor": "Sin Armadura",
+}
+
+
+def test_shared_enemy_selection_is_reproducible_and_valid():
+    names = ["Guerrero humano", "Guerrero enano", "Orco"]
+    first = _generate_shared_enemy_selection(names, 1_000, 1234)
+    second = _generate_shared_enemy_selection(names, 1_000, 1234)
+    assert np.array_equal(first, second)
+    assert first.min() >= 0
+    assert first.max() < len(names)
+
+
+def test_worker_runs_a_small_custom_matchup():
+    total = 100
+    progress = queue.Queue()
+    args = (
+        "Single",
+        "prueba",
+        FIGHTER,
+        "custom",
+        NORMAL_ENEMIES_DATABASE["Humano"] | {
+            "skills": [],
+            "main_weapon": "Espada",
+            "off_hand": "Ninguna",
+            "has_helmet": False,
+            "has_luck_amulet": False,
+            "armor": "Sin Armadura",
+        },
+        [],
+        np.zeros(total, dtype=np.int64),
+        total,
+        42,
+        True,
+        progress,
+        0,
+    )
+    mode, label, win_rate, is_base = run_single_task_optimized(args)
+    assert (mode, label, is_base) == ("Single", "prueba", True)
+    assert 0.0 <= win_rate <= 100.0
+    assert progress.get_nowait() == ("chunk", 0, total)
+
+
+def test_random_enemy_equipment_is_legal_and_levels_are_applied():
+    rng = np.random.default_rng(9)
+    config = _random_enemy_config("Guerrero humano", 4, rng)
+    legal = ENEMY_PROFILES["Guerrero humano"]["equipment"]
+    assert config["main_weapon"] in {name for name, *_ in legal["main"]}
+    assert config["off_hand"] in {name for name, *_ in legal["off"]}
+    assert config["armor"] in {name for name, *_ in legal["armor"]}
+    assert sum(config[attr] - ENEMY_PROFILES["Guerrero humano"][attr]
+               for attr in ("HA", "F", "R", "H", "I", "A")) + len(config["skills"]) == 4
+    if config["main_weapon"] in TWO_HANDED_WEAPONS:
+        assert config["off_hand"] in {"Ninguna", "Escudo", "Daga", "Maza", "Hacha", "Espada"}
+
+
+def test_enemy_variants_have_expected_shape():
+    enemies, owners = _build_enemy_variants(["Zombi", "Vampiro"], 2, 123, 5)
+    assert enemies.shape == (10, 17)
+    assert owners.tolist() == [0] * 5 + [1] * 5
+
+
+def test_vectorized_engine_has_no_compilation_pause():
+    total = 10_000
+    names = ["Guerrero humano", "Orco"]
+    indices = _generate_shared_enemy_selection(
+        names, total, 77, ENEMY_VARIANTS_PER_PROFILE
+    )
+    args = (
+        "Single", "rendimiento", FIGHTER, "sample", None, names, indices,
+        total, 77, True, None, 0, 0,
+    )
+    started = time.perf_counter()
+    result = run_single_task_optimized(args)
+    elapsed = time.perf_counter() - started
+    assert 0.0 <= result[2] <= 100.0
+    assert elapsed < 3.0
+
+
+def test_effective_key_ignores_equipment_specific_skills_when_inert():
+    base = FIGHTER | {"skills": []}
+    inert = FIGHTER | {"skills": ["Maestro del Hacha", "Golpe con el Escudo"]}
+    assert effective_fighter_key(base) == effective_fighter_key(inert)
+
+
+def test_effective_key_keeps_equipment_specific_skills_when_active():
+    axe = FIGHTER | {"main_weapon": "Hacha", "skills": []}
+    axe_master = axe | {"skills": ["Maestro del Hacha"]}
+    shield = FIGHTER | {"off_hand": "Escudo", "skills": []}
+    shield_strike = shield | {"skills": ["Golpe con el Escudo"]}
+    assert effective_fighter_key(axe) != effective_fighter_key(axe_master)
+    assert effective_fighter_key(shield) != effective_fighter_key(shield_strike)
+
+
+def test_effective_key_never_drops_general_combat_skills():
+    for skill in ("Combatiente Experto", "Golpe Poderoso", "Curtido"):
+        upgraded = FIGHTER | {"skills": [skill]}
+        assert effective_fighter_key(FIGHTER) != effective_fighter_key(upgraded)
+
+
+def test_combo_deduplication_preserves_aliases_for_inert_skills():
+    base_task = ("Single", "base", FIGHTER, None, None, None, None, 100, 1, True)
+    inert_task = (
+        "Single", "maestro sin hacha", FIGHTER | {"skills": ["Maestro del Hacha"]},
+        None, None, None, None, 100, 2, False,
+    )
+    unique, aliases = TrollheimApp._deduplicate_combo_tasks([base_task, inert_task])
+    assert len(unique) == 1
+    assert aliases[("Single", "base")] == [
+        ("base", True),
+        ("maestro sin hacha", False),
+    ]
+
+
+def test_combo_deduplication_keeps_active_skills_separate():
+    base_task = ("Single", "base", FIGHTER, None, None, None, None, 100, 1, True)
+    active_task = (
+        "Single", "esgrima", FIGHTER | {"skills": ["Experto en Esgrima"]},
+        None, None, None, None, 100, 2, False,
+    )
+    unique, _aliases = TrollheimApp._deduplicate_combo_tasks([base_task, active_task])
+    assert len(unique) == 2
+
+
+def test_tree_sort_keys_never_mix_incompatible_types():
+    values = ["Espada + Escudo", "★ 62.40% (+3.20%)", "", "+1 HA", "−2.5%"]
+    sorted(values, key=TrollheimApp._tree_sort_key)
+
+
+def test_combo_default_is_ten_thousand():
+    assert DEFAULT_COMBO_SIMULATIONS == 10_000
+
+
+def test_luck_amulet_is_not_an_upgrade_anymore():
+    upgrades = TrollheimApp._build_upgrade_list(object(), FIGHTER)
+    assert all("Amuleto" not in label for label, _upgrade in upgrades)
+
+
+def test_equipment_catalog_contains_armour_objects_and_consumables():
+    options = TrollheimApp._equipment_options()
+    labels = {label for label, _kind, _value in options}
+    assert {"Armadura Ligera", "Casco", "Amuleto de la suerte"} <= labels
+    assert {"Sombra Carmesí", "Loto Negro", "Saliva de Araña"} <= labels
+    assert {"Hongos Sombrero Loco", "Hongos Pirakabezas"} <= labels
+
+
+def test_equipment_loadout_starts_without_optional_equipment():
+    candidate = FIGHTER | {
+        "armor": "Armadura Pesada",
+        "has_helmet": True,
+        "has_luck_amulet": True,
+    }
+    equipped = TrollheimApp._apply_equipment_items(candidate, (
+        ("Armadura Ligera", "armor", "Armadura Ligera"),
+        ("Amuleto de la suerte", "amulet", True),
+    ))
+    assert equipped["armor"] == "Armadura Ligera"
+    assert not equipped["has_helmet"]
+    assert equipped["has_luck_amulet"]
+
+
+def test_only_poison_can_be_selected_twice():
+    armor = ("Armadura Ligera", "armor", "Armadura Ligera")
+    amulet = ("Amuleto de la suerte", "amulet", True)
+    poison = ("Loto Negro", "poison", "Loto Negro")
+    assert not TrollheimApp._equipment_pair_is_legal(armor, armor)
+    assert not TrollheimApp._equipment_pair_is_legal(amulet, amulet)
+    assert TrollheimApp._equipment_pair_is_legal(poison, poison)
+
+
+def test_equipment_loadouts_can_include_legal_triples():
+    armor = ("Armadura Ligera", "armor", "Armadura Ligera")
+    helmet = ("Casco", "helmet", True)
+    poison = ("Loto Negro", "poison", "Loto Negro")
+    loadouts = TrollheimApp._equipment_loadouts([armor, helmet, poison], 3)
+    item_sets = {items for _labels, items in loadouts}
+    assert (armor, helmet, poison) in item_sets
+    assert (poison, poison, poison) not in item_sets
+    assert all(1 <= len(items) <= 3 for _labels, items in loadouts)
+
+
+def test_equipment_maximum_one_only_generates_individual_items():
+    options = TrollheimApp._equipment_options()[:3]
+    loadouts = TrollheimApp._equipment_loadouts(options, 1)
+    assert len(loadouts) == len(options)
+    assert all(len(items) == 1 for _labels, items in loadouts)
+
+
+def test_weapon_loadouts_cover_the_four_hand_configurations():
+    loadouts = TrollheimApp._weapon_loadouts(
+        ["Espada", "Maza", "Arma 2H", "Bagh Nakh"]
+    )
+    assert ("Single", "Espada", "Ninguna") in loadouts
+    assert ("Shield", "Espada", "Escudo") in loadouts
+    assert ("Dual", "Espada", "Maza") in loadouts
+    assert ("TwoHand", "Arma 2H", "Ninguna") in loadouts
+    assert ("TwoHand", "Bagh Nakh", "Ninguna") in loadouts
+
+
+def test_two_handed_weapons_are_not_generated_as_dual_combinations():
+    loadouts = TrollheimApp._weapon_loadouts(["Espada", "Arma 2H"])
+    assert all(
+        main != "Arma 2H" or mode == "TwoHand"
+        for mode, main, _off in loadouts
+    )
+
+
+def test_weapons_that_demand_attention_do_not_get_a_second_weapon():
+    loadouts = TrollheimApp._weapon_loadouts(
+        ["Lanza", "Rebanadora", "Pinchagarrapatos", "Daga"]
+    )
+    assert not any(
+        mode == "Dual" and main in {"Lanza", "Rebanadora", "Pinchagarrapatos"}
+        for mode, main, _off in loadouts
+    )
+
+
+def test_two_poisons_are_applied_one_to_each_hand():
+    equipped = TrollheimApp._apply_equipment_items(FIGHTER, (
+        ("Loto Negro", "poison", "Loto Negro"),
+        ("Veneno Negro", "poison", "Veneno Negro"),
+    ))
+    assert equipped["main_poison"] == "Loto Negro"
+    assert equipped["offhand_poison"] == "Veneno Negro"
+
+
+def test_optimal_view_only_uses_visible_equipment_modes():
+    values = {
+        "Single": (55.0, 1.0),
+        "Shield": (70.0, 2.0),
+        "Dual": (65.0, 3.0),
+        "TwoHand": (60.0, 4.0),
+    }
+    assert TrollheimApp._best_visible_mode(values, {"Single", "Shield", "Dual"}) == "Shield"
+    assert TrollheimApp._best_visible_mode(values, {"Single", "Dual"}) == "Dual"
+
+
+def test_optimal_view_handles_sparse_weapon_modes():
+    values = {"Shield": (61.0, 2.0)}
+    assert TrollheimApp._best_visible_mode(values, {"Single", "Shield"}) == "Shield"
+    assert TrollheimApp._best_visible_mode(values, {"Single", "Dual"}) is None
+
+
+def test_combo_parts_keep_one_canonical_order():
+    parts = TrollheimApp._combo_parts("+1 A + Fortachón")
+    assert parts == ("+1 A", "Fortachón")
+
+
+def test_combo_search_ignores_case_accents_and_component_order():
+    parts = TrollheimApp._combo_parts("+1 A + Fortachón")
+    assert TrollheimApp._combo_matches(parts, "FORTACHON")
+    assert TrollheimApp._combo_matches(parts, "+1 a")
+    assert not TrollheimApp._combo_matches(parts, "Curtido")
