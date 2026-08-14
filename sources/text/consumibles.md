@@ -1,28 +1,26 @@
 # Consumibles de combate
 
-Esta ficha reúne los objetos de un solo uso que tienen efecto directo en un
-duelo cuerpo a cuerpo. Los efectos posteriores a la batalla no se simulan.
+Esta ficha reúne los objetos de un solo uso relacionados con el combate cuerpo
+a cuerpo.
 
-## Preparativos implementados
+## Preparativos
 
-| Objeto | Efecto en la simulación | Fuente |
+| Objeto | Regla resumida | Fuente |
 |---|---|---|
 | Hongos Sombrero Loco | Furia Asesina: duplica el atributo A, pero no el ataque adicional por combatir con dos armas. El efecto termina al quedar Derribado o Aturdido. | `trollheim.pdf`, pp. 40 y 52 |
-| Hongos Pirakabezas | El mismo efecto que los Hongos Sombrero Loco; también permite usar la Bola con Kadena, que todavía no se evalúa en esta comparativa. | `caos-en-las-calles.pdf`, p. 129 |
+| Hongos Pirakabezas | El mismo efecto que los Hongos Sombrero Loco; también permite usar la Bola con Kadena. | `caos-en-las-calles.pdf`, p. 129 |
 | Sombra Carmesí | +1 F y +1D3 I durante toda la batalla. | `trollheim.pdf`, p. 52 |
 | Raíz de Mandrágora | +1 R; los resultados de Aturdido pasan a Derribado. | `trollheim.pdf`, p. 52 |
 | Lágrimas de Shallaya | Inmunidad a todos los venenos durante la batalla. | `trollheim.pdf`, p. 55 |
 
 Sombra Carmesí y Raíz de Mandrágora no afectan a No Muertos ni Poseídos. Las
-Lágrimas tampoco pueden usarlas. Por ello estos perfiles no reciben los
-preparativos al generar rivales aleatorios.
+Lágrimas tampoco pueden usarlas.
 
-## Venenos implementados
+## Venenos
 
-Cada dosis cubre un arma durante una batalla. En la ficha se eligen por separado
-el veneno del arma principal y el de la secundaria.
+Cada dosis cubre un arma durante una batalla.
 
-| Veneno | Efecto en la simulación | Fuente |
+| Veneno | Regla resumida | Fuente |
 |---|---|---|
 | Loto Negro | Un 6 natural para impactar hiere automáticamente; una tirada posterior decide si el impacto es crítico. | `trollheim.pdf`, p. 52 |
 | Veneno Negro | +1 F al herir y al calcular la penetración de armadura. | `trollheim.pdf`, p. 52 |
@@ -34,13 +32,12 @@ el veneno del arma principal y el de la secundaria.
 | Toxina del Diablo | Repite las tiradas para herir fallidas; la repetición no puede causar crítico. | `lustria.pdf`, p. 27 |
 | Veneno de Reptil | +1 F al herir sin aumentar la penetración de armadura. | `lustria.pdf`, p. 27 |
 
-Las Espadas Supurantes conservan su Loto Negro permanente y no reciben un
-segundo veneno aunque se seleccione uno en la ficha.
+Las Espadas Supurantes llevan Loto Negro permanente.
 
-## Consumibles deliberadamente excluidos
+## Otros consumibles relacionados
 
-- Cerveza Bugman y Vino Élfico: su efecto relevante es la inmunidad al miedo.
+- Cerveza Bugman y Vino Élfico: conceden inmunidad al miedo.
 - Hierbas Curativas: no pueden utilizarse mientras el guerrero está trabado en
   combate cuerpo a cuerpo.
-- Efectos secundarios, adicción y secuelas: suceden después de la batalla y no
-  cambian el resultado del duelo simulado.
+- Algunas drogas producen adicción, estupidez u otras secuelas después de la
+  batalla; consúltese la entrada completa en el manual correspondiente.

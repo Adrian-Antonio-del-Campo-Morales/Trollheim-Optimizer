@@ -10,7 +10,7 @@ import tkinter as tk
 import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import combinations_with_replacement
-from tkinter import messagebox, ttk
+from tkinter import font as tkfont, messagebox, ttk
 
 import numpy as np
 
@@ -35,6 +35,24 @@ DELTA_POSITIVE = "#16833b"
 DELTA_NEGATIVE = "#c62828"
 DELTA_NEUTRAL = "#666666"
 DEFAULT_COMBO_SIMULATIONS = 10_000
+PROGRESS_POLL_MS = 100
+PROGRESS_ANIMATION_MS = 60
+
+
+def _configure_simulation_worker():
+    """Deja que Windows atienda la interfaz antes que a los procesos de cálculo."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        below_normal_priority = 0x00004000
+        process = ctypes.windll.kernel32.GetCurrentProcess()
+        ctypes.windll.kernel32.SetPriorityClass(
+            process, below_normal_priority
+        )
+    except (AttributeError, OSError):
+        pass
 
 # Tooltips
 
@@ -364,6 +382,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
             width=18,
         )
         self.cb_armor.pack(side="left", fill="x", expand=True)
+        self.cb_armor.bind("<<ComboboxSelected>>", self.on_equipment_change)
 
         self.chk_helmet = ttk.Checkbutton(
             defense,
@@ -534,7 +553,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
             self.eq_off_exclusive.set("Ninguna")
             if self.eq_off_general.get() not in ("Ninguna", "Escudo"):
                 self.eq_off_general.set("Ninguna")
-        elif main_weapon == "Rebanadora":
+        elif main_weapon in ("Rebanadora", "Pinchagarrapatos"):
             self.cb_offhand.config(values=("Ninguna", "Escudo"))
             self.cb_off_exclusive.config(
                 values=("Ninguna", "Guantelete con Pincho"),
@@ -550,6 +569,21 @@ class WarriorConfigFrame(ttk.LabelFrame):
             self.cb_offhand.config(values=OFFHAND_GENERAL)
             self.cb_off_exclusive.config(values=OFFHAND_EXCLUSIVE)
             self.cb_off_exclusive.config(state="readonly")
+
+        armor = self.eq_armor.get()
+        forbidden_defences = set()
+        if armor in ("Cuero Endurecido", "Ropajes de Ninja"):
+            forbidden_defences.add("Escudo")
+        elif armor in ("Túnica de Mago", "Ropajes de Asesino Eshin"):
+            forbidden_defences.update(("Escudo", "Rodela"))
+        if forbidden_defences:
+            allowed = tuple(
+                value for value in self.cb_offhand.cget("values")
+                if value not in forbidden_defences
+            )
+            self.cb_offhand.config(values=allowed)
+            if self.eq_off_general.get() in forbidden_defences:
+                self.eq_off_general.set("Ninguna")
 
         if off_disabled:
             self.eq_off_general.set("Ninguna")
@@ -600,6 +634,35 @@ class WarriorConfigFrame(ttk.LabelFrame):
 
         return result
 
+    def load_config(self, config):
+        for attribute, entry in self.attr_entries.items():
+            entry.delete(0, tk.END)
+            entry.insert(0, str(config.get(attribute, self.stats[attribute])))
+
+        selected_skills = set(config.get("skills", ()))
+        for skill, variable in self.skills.items():
+            variable.set(skill in selected_skills)
+
+        main_weapon = config.get("main_weapon", WEAPONS_GENERAL[0])
+        self.eq_main_general.set(
+            "Ninguna" if main_weapon in WEAPONS_EXCLUSIVE else main_weapon
+        )
+        self.eq_main_exclusive.set(
+            main_weapon if main_weapon in WEAPONS_EXCLUSIVE else "Ninguna"
+        )
+        off_hand = config.get("off_hand", "Ninguna")
+        self.eq_off_general.set(
+            "Ninguna" if off_hand in OFFHAND_EXCLUSIVE else off_hand
+        )
+        self.eq_off_exclusive.set(
+            off_hand if off_hand in OFFHAND_EXCLUSIVE else "Ninguna"
+        )
+        self.eq_main_material.set(config.get("main_weapon_material", "Normal"))
+        self.eq_off_material.set(config.get("offhand_material", "Normal"))
+        self.eq_armor.set(config.get("armor", ARMORS[0]))
+        self.eq_has_helmet.set(config.get("has_helmet", False))
+        self.on_equipment_change()
+
 
 # Ventana principal
 
@@ -628,13 +691,58 @@ class TrollheimApp(tk.Tk):
             for difficulty in DIFFICULTIES
         }
         self.enemy_level = tk.IntVar(value=0)
+        self.enemy_mode = tk.StringVar(value="sample")
+        self.simulations_improvements = tk.StringVar(value=str(TOTAL_SIMULATIONS))
+        self.simulations_combos = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
+        self.simulations_equipment = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
+        self.simulations_weapons = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
+        self.results_view = tk.StringVar(value="optimal")
+        self.combo_view = tk.StringVar(value="optimal")
+        self.equipment_view = tk.StringVar(value="optimal")
+        self.weapon_view = tk.StringVar(value="optimal")
+        self.combo_search = tk.StringVar()
+        self.equipment_max_items = tk.IntVar(value=3)
+        self.result_visible_modes = {mode for mode, _title in COMBAT_MODES}
+        self.combo_visible_modes = {mode for mode, _title in COMBAT_MODES}
+        self.equipment_visible_modes = {mode for mode, _title in COMBAT_MODES}
+        self.weapon_visible_modes = {mode for mode, _title in COMBAT_MODES}
+        self.equipment_item_vars = {
+            label: tk.BooleanVar(
+                value=label in {
+                    "Armadura Ligera", "Armadura Pesada", "Casco",
+                    "Amuleto de la suerte",
+                }
+            )
+            for label, _kind, _value in self._equipment_options()
+        }
+        common_weapons = {
+            "Daga", "Maza", "Hacha", "Espada", "Lanza", "Alabarda",
+            "Arma 2H", "Mayal", "Mangual",
+        }
+        self.weapon_item_vars = {
+            weapon: tk.BooleanVar(value=weapon in common_weapons)
+            for weapon in WEAPONS_MAIN
+        }
+        self._warrior_snapshots = {}
+        self._active_tab_key = "candidate"
 
-        self.setup_tab_candidate()
-        self.setup_tab_enemy()
-        self.setup_tab_results()
-        self.setup_tab_combos()
-        self.setup_tab_equipment()
-        self.setup_tab_weapons()
+        tab_specs = (
+            ("candidate", "Candidato", self.setup_tab_candidate),
+            ("enemy", "Enemigo", self.setup_tab_enemy),
+            ("results", "Resultados por Mejora", self.setup_tab_results),
+            ("combos", "Combos Mejoras", self.setup_tab_combos),
+            ("weapons", "Configuraciones de Armas", self.setup_tab_weapons),
+            ("equipment", "Equipamiento", self.setup_tab_equipment),
+        )
+        self._lazy_tabs = {}
+        self._built_tabs = set()
+        for key, title, builder in tab_specs:
+            tab = ttk.Frame(self.notebook)
+            self.notebook.add(tab, text=title)
+            self._lazy_tabs[str(tab)] = (key, tab, builder)
+
+        self._build_lazy_tab("candidate")
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -645,16 +753,58 @@ class TrollheimApp(tk.Tk):
         self.minsize(900, 650)
         self.geometry(f"{width}x{height}+{x}+{y}")
 
-    def setup_tab_candidate(self):
+    def _build_lazy_tab(self, requested_key):
+        if requested_key in self._built_tabs:
+            return
+        for key, tab, builder in self._lazy_tabs.values():
+            if key == requested_key:
+                self._built_tabs.add(key)
+                builder(tab)
+                return
 
-        tab = ttk.Frame(
-            self.notebook
-        )
+    def _on_tab_changed(self, _event=None):
+        selected = self.notebook.select()
+        tab_data = self._lazy_tabs.get(selected)
+        if not tab_data:
+            return
+        requested_key = tab_data[0]
+        if requested_key == self._active_tab_key:
+            return
+        if getattr(self, "_simulation_running", False):
+            self.notebook.select(self._tab_id_for(self._active_tab_key))
+            return
+        self._unload_tab(self._active_tab_key)
+        self._build_lazy_tab(requested_key)
+        self._active_tab_key = requested_key
 
-        self.notebook.add(
-            tab,
-            text="Candidato",
-        )
+    def _tab_id_for(self, requested_key):
+        for tab_id, (key, _tab, _builder) in self._lazy_tabs.items():
+            if key == requested_key:
+                return tab_id
+        raise KeyError(requested_key)
+
+    def _unload_tab(self, key):
+        if key == "candidate" and hasattr(self, "candidate_config"):
+            self._warrior_snapshots[key] = self.candidate_config.get_config_dict()
+        elif key == "enemy" and hasattr(self, "enemy_config"):
+            self._warrior_snapshots[key] = self.enemy_config.get_config_dict()
+
+        tab = self.nametowidget(self._tab_id_for(key))
+        for child in tab.winfo_children():
+            child.destroy()
+        self._built_tabs.discard(key)
+
+    def _candidate_for_simulation(self):
+        if "candidate" in self._built_tabs:
+            return self.candidate_config.get_config_dict()
+        return self._warrior_snapshots["candidate"].copy()
+
+    def _custom_enemy_for_simulation(self):
+        if "enemy" in self._built_tabs:
+            return self.enemy_config.get_config_dict()
+        return self._warrior_snapshots["enemy"].copy()
+
+    def setup_tab_candidate(self, tab):
 
         self.candidate_config = WarriorConfigFrame(
             tab,
@@ -667,21 +817,12 @@ class TrollheimApp(tk.Tk):
             padx=15,
             pady=15,
         )
+        if "candidate" in self._warrior_snapshots:
+            self.candidate_config.load_config(self._warrior_snapshots["candidate"])
 
-    def setup_tab_enemy(self):
+    def setup_tab_enemy(self, tab):
 
-        tab = ttk.Frame(
-            self.notebook
-        )
-
-        self.notebook.add(
-            tab,
-            text="Enemigo",
-        )
-
-        self.enemy_mode = tk.StringVar(
-            value="sample"
-        )
+        self.enemy_check_widgets = []
 
         ttk.Label(
             tab,
@@ -825,6 +966,9 @@ class TrollheimApp(tk.Tk):
             pady=5,
         )
 
+        if "enemy" in self._warrior_snapshots:
+            self.enemy_config.load_config(self._warrior_snapshots["enemy"])
+
         self.toggle_enemy_mode()
 
     def toggle_enemy_mode(self):
@@ -877,12 +1021,50 @@ class TrollheimApp(tk.Tk):
         return 1, 0.0, value.casefold()
 
     def _configure_sortable_tree(self, tree, columns):
+        tree.configure(show="tree headings")
+        tree.heading("#0", text="")
+        tree.column("#0", width=0, minwidth=0, stretch=False)
         for column, title in columns:
             tree.heading(
                 column,
                 text=title,
+                anchor="center",
                 command=lambda c=column: self._sort_treeview(tree, c, False),
             )
+            tree.column(column, anchor="center")
+        tree.bind(
+            "<Configure>",
+            lambda _event, result_tree=tree: self._center_tree_columns(result_tree),
+            add="+",
+        )
+
+    @staticmethod
+    def _visible_tree_columns(tree):
+        columns = tree.cget("displaycolumns")
+        if columns == "#all":
+            return tuple(tree.cget("columns"))
+        return tuple(columns)
+
+    def _autosize_tree_columns(self, tree):
+        """Ajusta las columnas mostradas y deja el bloque centrado."""
+        text_font = tkfont.nametofont("TkDefaultFont")
+        for column in self._visible_tree_columns(tree):
+            widest = text_font.measure(tree.heading(column, "text"))
+            for item in tree.get_children(""):
+                widest = max(widest, text_font.measure(str(tree.set(item, column))))
+            tree.column(column, width=widest + 28, minwidth=30, stretch=False)
+        self._center_tree_columns(tree)
+
+    @staticmethod
+    def _center_tree_columns(tree):
+        """Usa la columna de árbol vacía como margen izquierdo dinámico."""
+        try:
+            columns = TrollheimApp._visible_tree_columns(tree)
+            content_width = sum(int(tree.column(column, "width")) for column in columns)
+            margin = max(0, (tree.winfo_width() - content_width) // 2)
+            tree.column("#0", width=margin, minwidth=margin, stretch=False)
+        except tk.TclError:
+            pass
 
     @staticmethod
     def _pack_scrollable_tree(tree, pady=(4, 10)):
@@ -904,8 +1086,18 @@ class TrollheimApp(tk.Tk):
         return frame
 
     def _create_mode_cards(self, parent, target):
+        ttk.Label(
+            parent,
+            text=(
+                "CONFIGURACIONES DE MANOS · Cada tarjeta controla su columna. "
+                "Usa el botón para mostrarla u ocultarla."
+            ),
+            font=("Arial", 9, "bold"),
+            anchor="center",
+        ).pack(fill="x", padx=10, pady=(8, 0))
+
         container = ttk.Frame(parent)
-        container.pack(fill="x", padx=10, pady=(8, 4))
+        container.pack(fill="x", padx=10, pady=(4, 4))
         cards = {}
 
         for column, (mode, title) in enumerate(COMBAT_MODES):
@@ -926,27 +1118,49 @@ class TrollheimApp(tk.Tk):
             rate.pack(side="left")
             delta = ttk.Label(rate_line, text="", font=("Arial", 10, "bold"))
             delta.pack(side="left", padx=(5, 0))
-            badge = ttk.Label(
-                card,
-                text="Pulsa para ocultar",
-                font=("Arial", 8, "italic"),
+
+            badges = ttk.Frame(card)
+            badges.pack(fill="x", padx=6, pady=(2, 1))
+            current_badge = ttk.Label(
+                badges,
+                text="",
+                font=("Arial", 8, "bold"),
+                foreground="#1b5eaa",
                 anchor="center",
             )
-            badge.pack(fill="x", padx=6, pady=(1, 5))
+            current_badge.pack(side="left", expand=True)
+            best_badge = ttk.Label(
+                badges,
+                text="",
+                font=("Arial", 8, "bold"),
+                foreground="#9a6700",
+                anchor="center",
+            )
+            best_badge.pack(side="left", expand=True)
 
-            for widget in (card, equipment, rate_line, rate, delta, badge):
-                widget.bind(
-                    "<Button-1>",
-                    lambda _event, m=mode, t=target: self._toggle_mode_column(t, m),
-                )
-                widget.config(cursor="hand2")
+            visibility = ttk.Label(
+                card,
+                text="VISIBLE EN LA TABLA",
+                font=("Arial", 8, "bold"),
+                foreground=DELTA_POSITIVE,
+                anchor="center",
+            )
+            visibility.pack(fill="x", padx=6, pady=(1, 2))
+            toggle = ttk.Button(
+                card,
+                text="Ocultar columna",
+                command=lambda m=mode, t=target: self._toggle_mode_column(t, m),
+            )
+            toggle.pack(fill="x", padx=8, pady=(0, 6))
 
             cards[mode] = {
                 "equipment": equipment,
                 "rate": rate,
                 "delta": delta,
-                "badge": badge,
-                "status": "",
+                "current_badge": current_badge,
+                "best_badge": best_badge,
+                "visibility": visibility,
+                "toggle": toggle,
             }
 
         return cards
@@ -976,38 +1190,53 @@ class TrollheimApp(tk.Tk):
             "weapons": self._render_weapon_table,
         }
         renderers[target]()
-        for mode_key, _title in COMBAT_MODES:
-            status = cards[mode_key].get("status", "")
-            if mode_key in visible:
-                cards[mode_key]["badge"].config(
-                    text=f"{status} · pulsa para ocultar" if status else "Pulsa para ocultar"
+        self._refresh_mode_card_visibility(cards, visible)
+
+    @staticmethod
+    def _refresh_mode_card_visibility(cards, visible):
+        for mode, _title in COMBAT_MODES:
+            is_visible = mode in visible
+            cards[mode]["visibility"].config(
+                text="VISIBLE EN LA TABLA" if is_visible else "OCULTA EN LA TABLA",
+                foreground=DELTA_POSITIVE if is_visible else DELTA_NEGATIVE,
+            )
+            if is_visible and len(visible) == 1:
+                cards[mode]["toggle"].config(
+                    text="Única columna visible",
+                    state="disabled",
                 )
             else:
-                cards[mode_key]["badge"].config(text="OCULTA · pulsa para mostrar")
+                cards[mode]["toggle"].config(
+                    text="Ocultar columna" if is_visible else "Mostrar columna",
+                    state="normal",
+                )
+
+    @staticmethod
+    def _reset_mode_cards(cards, visible):
+        for card in cards.values():
+            card["equipment"].config(text="Preparando equipo...")
+            card["rate"].config(text="Calculando...")
+            card["delta"].config(text="")
+            card["current_badge"].config(text="")
+            card["best_badge"].config(text="")
+        TrollheimApp._refresh_mode_card_visibility(cards, visible)
 
     def _apply_result_view(self, target):
-        settings = {
-            "results": (
-                self.results_tree, self.results_view,
-                self.result_visible_modes, ("Mejora",), "Equipment",
-            ),
-            "combos": (
-                self.combo_tree, self.combo_view,
-                self.combo_visible_modes, ("Mejora1", "Mejora2"), "Equipment",
-            ),
-            "equipment": (
-                self.equipment_tree, self.equipment_view,
-                self.equipment_visible_modes, ("Item1", "Item2", "Item3"), "Equipment",
-            ),
-            "weapons": (
-                self.weapon_tree, self.weapon_view,
-                self.weapon_visible_modes, ("Main", "Off"), "Equipment",
-            ),
-        }
-        tree, view_var, visible, fixed, equipment_column = settings[target]
+        if target == "results":
+            tree, view_var = self.results_tree, self.results_view
+            visible, fixed = self.result_visible_modes, ("Mejora",)
+        elif target == "combos":
+            tree, view_var = self.combo_tree, self.combo_view
+            visible, fixed = self.combo_visible_modes, ("Mejora1", "Mejora2")
+        elif target == "equipment":
+            tree, view_var = self.equipment_tree, self.equipment_view
+            visible, fixed = self.equipment_visible_modes, ("Item1", "Item2", "Item3")
+        else:
+            tree, view_var = self.weapon_tree, self.weapon_view
+            visible, fixed = self.weapon_visible_modes, ("Main", "Off")
 
         if view_var.get() == "optimal":
-            tree.configure(displaycolumns=(*fixed, "Optimal", equipment_column))
+            tree.configure(displaycolumns=(*fixed, "Optimal", "Equipment"))
         else:
             tree.configure(
                 displaycolumns=(
@@ -1025,6 +1254,27 @@ class TrollheimApp(tk.Tk):
             "weapons": self._render_weapon_table,
         }
         renderers[target]()
+
+    def _restore_simulation_tab(self, target):
+        if target == "results":
+            table_name, cards_name = "_results_table_data", "_results_card_data"
+            cards, renderer = self.result_cards, self._render_results_table
+        elif target == "combos":
+            table_name, cards_name = "_combo_table_data", "_combo_card_data"
+            cards, renderer = self.combo_cards, self._render_combo_table
+        elif target == "equipment":
+            table_name, cards_name = "_equipment_table_data", "_equipment_card_data"
+            cards, renderer = self.equipment_cards, self._render_equipment_table
+        else:
+            table_name, cards_name = "_weapon_table_data", "_weapon_card_data"
+            cards, renderer = self.weapon_cards, self._render_weapon_table
+        card_data = getattr(self, cards_name, None)
+        if card_data:
+            base_rates, user_mode_key, equipment = card_data
+            self._update_mode_cards(cards, base_rates, user_mode_key, equipment)
+        self._apply_result_view(target)
+        if getattr(self, table_name, None):
+            renderer()
 
     def _clear_combo_filters(self):
         self.combo_search.set("")
@@ -1066,11 +1316,11 @@ class TrollheimApp(tk.Tk):
     def _update_mode_cards(self, cards, base_rates, user_mode_key, equipment):
         best_rate = max(base_rates.values())
         user_rate = base_rates[user_mode_key]
-        if cards is self.result_cards:
+        if cards is getattr(self, "result_cards", None):
             visible = self.result_visible_modes
-        elif cards is self.combo_cards:
+        elif cards is getattr(self, "combo_cards", None):
             visible = self.combo_visible_modes
-        elif cards is self.equipment_cards:
+        elif cards is getattr(self, "equipment_cards", None):
             visible = self.equipment_visible_modes
         else:
             visible = self.weapon_visible_modes
@@ -1090,32 +1340,19 @@ class TrollheimApp(tk.Tk):
                 text=f"{arrow} {abs(delta):.2f}%",
                 foreground=color,
             )
-            badges = []
-            if mode == user_mode_key:
-                badges.append("EQUIPO ACTUAL")
-            if abs(rate - best_rate) < 0.00001:
-                badges.append("MEJOR RESULTADO")
-            cards[mode]["status"] = " · ".join(badges)
-            cards[mode]["badge"].config(
-                text=(
-                    (
-                        f"{cards[mode]['status']} · pulsa para ocultar"
-                        if cards[mode]["status"]
-                        else "Pulsa para ocultar"
-                    )
-                    if mode in visible
-                    else "OCULTA · pulsa para mostrar"
-                )
+            cards[mode]["current_badge"].config(
+                text="● EQUIPO ACTUAL" if mode == user_mode_key else ""
             )
+            cards[mode]["best_badge"].config(
+                text="★ MEJOR" if abs(rate - best_rate) < 0.00001 else ""
+            )
+        self._refresh_mode_card_visibility(cards, visible)
 
-    def setup_tab_results(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Resultados por Mejora")
+    def setup_tab_results(self, tab):
 
         controls = ttk.Frame(tab)
         controls.pack(pady=7)
         ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        self.simulations_improvements = tk.StringVar(value=str(TOTAL_SIMULATIONS))
         ttk.Entry(controls, textvariable=self.simulations_improvements, width=12).pack(side="left", padx=(0, 10))
         self.btn_run = ttk.Button(
             controls,
@@ -1134,7 +1371,6 @@ class TrollheimApp(tk.Tk):
         view_controls = ttk.Frame(tab)
         view_controls.pack(pady=(3, 0))
         ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        self.results_view = tk.StringVar(value="equipment")
         ttk.Radiobutton(
             view_controls, text="Por equipo", variable=self.results_view,
             value="equipment", command=lambda: self._change_result_view("results"),
@@ -1144,7 +1380,6 @@ class TrollheimApp(tk.Tk):
             value="optimal", command=lambda: self._change_result_view("results"),
         ).pack(side="left", padx=3)
 
-        self.result_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.result_cards = self._create_mode_cards(tab, "results")
         results_table = ttk.Frame(tab)
         self.results_tree = ttk.Treeview(
@@ -1168,20 +1403,17 @@ class TrollheimApp(tk.Tk):
         self.results_tree.column("Equipment", width=240, anchor="center")
         self.results_tree.configure(displaycolumns=("Mejora", "Single", "Shield", "Dual", "TwoHand"))
         self._pack_scrollable_tree(self.results_tree)
+        self._restore_simulation_tab("results")
 
-    def setup_tab_equipment(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Equipamiento")
+    def setup_tab_equipment(self, tab):
 
         controls = ttk.Frame(tab)
         controls.pack(pady=7)
         ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        self.simulations_equipment = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
         ttk.Entry(
             controls, textvariable=self.simulations_equipment, width=12
         ).pack(side="left", padx=(0, 10))
         ttk.Label(controls, text="Máximo de objetos:").pack(side="left", padx=(0, 5))
-        self.equipment_max_items = tk.IntVar(value=3)
         ttk.Combobox(
             controls,
             textvariable=self.equipment_max_items,
@@ -1197,16 +1429,6 @@ class TrollheimApp(tk.Tk):
         )
         self.btn_equipment_run.pack(side="left")
 
-        initially_selected = {
-            "Armadura Ligera",
-            "Armadura Pesada",
-            "Casco",
-            "Amuleto de la suerte",
-        }
-        self.equipment_item_vars = {
-            label: tk.BooleanVar(value=label in initially_selected)
-            for label, _kind, _value in self._equipment_options()
-        }
         self.equipment_filter_button = ttk.Menubutton(
             controls, text="Objetos incluidos ▾"
         )
@@ -1247,7 +1469,6 @@ class TrollheimApp(tk.Tk):
         view_controls = ttk.Frame(tab)
         view_controls.pack(pady=(3, 0))
         ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        self.equipment_view = tk.StringVar(value="equipment")
         ttk.Radiobutton(
             view_controls, text="Por equipo", variable=self.equipment_view,
             value="equipment", command=lambda: self._change_result_view("equipment"),
@@ -1257,7 +1478,6 @@ class TrollheimApp(tk.Tk):
             value="optimal", command=lambda: self._change_result_view("equipment"),
         ).pack(side="left", padx=3)
 
-        self.equipment_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.equipment_cards = self._create_mode_cards(tab, "equipment")
 
         equipment_table = ttk.Frame(tab)
@@ -1293,15 +1513,13 @@ class TrollheimApp(tk.Tk):
             )
         )
         self._pack_scrollable_tree(self.equipment_tree, pady=(6, 10))
+        self._restore_simulation_tab("equipment")
 
-    def setup_tab_weapons(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Configuraciones de Armas")
+    def setup_tab_weapons(self, tab):
 
         controls = ttk.Frame(tab)
         controls.pack(pady=7)
         ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        self.simulations_weapons = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
         ttk.Entry(
             controls, textvariable=self.simulations_weapons, width=12
         ).pack(side="left", padx=(0, 10))
@@ -1312,14 +1530,6 @@ class TrollheimApp(tk.Tk):
         )
         self.btn_weapons_run.pack(side="left")
 
-        common_weapons = {
-            "Daga", "Maza", "Hacha", "Espada", "Lanza", "Alabarda",
-            "Arma 2H", "Mayal", "Mangual",
-        }
-        self.weapon_item_vars = {
-            weapon: tk.BooleanVar(value=weapon in common_weapons)
-            for weapon in WEAPONS_MAIN
-        }
         self.weapon_filter_button = ttk.Menubutton(
             controls, text="Armas incluidas ▾"
         )
@@ -1358,7 +1568,6 @@ class TrollheimApp(tk.Tk):
         view_controls = ttk.Frame(tab)
         view_controls.pack(pady=(3, 0))
         ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        self.weapon_view = tk.StringVar(value="equipment")
         ttk.Radiobutton(
             view_controls, text="Por equipo", variable=self.weapon_view,
             value="equipment", command=lambda: self._change_result_view("weapons"),
@@ -1368,7 +1577,6 @@ class TrollheimApp(tk.Tk):
             value="optimal", command=lambda: self._change_result_view("weapons"),
         ).pack(side="left", padx=3)
 
-        self.weapon_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.weapon_cards = self._create_mode_cards(tab, "weapons")
         weapon_table = ttk.Frame(tab)
         self.weapon_tree = ttk.Treeview(
@@ -1399,15 +1607,13 @@ class TrollheimApp(tk.Tk):
             displaycolumns=("Main", "Off", "Single", "Shield", "Dual", "TwoHand")
         )
         self._pack_scrollable_tree(self.weapon_tree, pady=(6, 10))
+        self._restore_simulation_tab("weapons")
 
-    def setup_tab_combos(self):
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Combos Mejoras")
+    def setup_tab_combos(self, tab):
 
         controls = ttk.Frame(tab)
         controls.pack(pady=7)
         ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        self.simulations_combos = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
         ttk.Entry(controls, textvariable=self.simulations_combos, width=12).pack(side="left", padx=(0, 10))
         self.btn_combo_run = ttk.Button(
             controls,
@@ -1426,7 +1632,6 @@ class TrollheimApp(tk.Tk):
         view_controls = ttk.Frame(tab)
         view_controls.pack(pady=(3, 0))
         ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        self.combo_view = tk.StringVar(value="equipment")
         ttk.Radiobutton(
             view_controls, text="Por equipo", variable=self.combo_view,
             value="equipment", command=lambda: self._change_result_view("combos"),
@@ -1436,14 +1641,16 @@ class TrollheimApp(tk.Tk):
             value="optimal", command=lambda: self._change_result_view("combos"),
         ).pack(side="left", padx=3)
 
-        self.combo_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.combo_cards = self._create_mode_cards(tab, "combos")
 
         filter_controls = ttk.Frame(tab)
         filter_controls.pack(fill="x", padx=10, pady=(5, 1))
         ttk.Label(filter_controls, text="Buscar combinación:").pack(side="left", padx=(0, 5))
-        self.combo_search = tk.StringVar()
-        self.combo_search.trace_add("write", lambda *_args: self._render_combo_table())
+        if not getattr(self, "_combo_search_trace_added", False):
+            self.combo_search.trace_add(
+                "write", lambda *_args: self._render_combo_table()
+            )
+            self._combo_search_trace_added = True
         ttk.Entry(filter_controls, textvariable=self.combo_search, width=32).pack(
             side="left", fill="x", expand=True
         )
@@ -1477,6 +1684,7 @@ class TrollheimApp(tk.Tk):
         self.combo_tree.column("Equipment", width=220, anchor="center")
         self.combo_tree.configure(displaycolumns=("Mejora1", "Mejora2", "Single", "Shield", "Dual", "TwoHand"))
         self._pack_scrollable_tree(self.combo_tree)
+        self._restore_simulation_tab("combos")
 
     def get_user_mode_key(
         self,
@@ -1494,10 +1702,10 @@ class TrollheimApp(tk.Tk):
         if main_weapon in TWO_HANDED_WEAPONS:
             return "TwoHand"
 
-        if off_hand == "Escudo":
+        if off_hand in ("Escudo", "Rodela"):
             return "Shield"
 
-        if off_hand not in ("Ninguna", "Escudo") or main_weapon in PAIRED_WEAPONS:
+        if off_hand not in ("Ninguna", "Escudo", "Rodela") or main_weapon in PAIRED_WEAPONS:
             return "Dual"
 
         return "Single"
@@ -1553,6 +1761,7 @@ class TrollheimApp(tk.Tk):
             if off_hand in (
                 "Ninguna",
                 "Escudo",
+                "Rodela",
             ):
                 off_hand = "Daga"
 
@@ -1692,7 +1901,11 @@ class TrollheimApp(tk.Tk):
             loadouts.append(("Single", weapon, "Ninguna"))
             loadouts.append(("Shield", weapon, "Escudo"))
         for main in one_handed:
-            if main in {"Lanza", "Rebanadora", "Pinchagarrapatos"}:
+            if main in {"Rebanadora", "Pinchagarrapatos"}:
+                if "Guantelete con Pincho" in offhand:
+                    loadouts.append(("Dual", main, "Guantelete con Pincho"))
+                continue
+            if main == "Lanza":
                 continue
             for off in offhand:
                 loadouts.append(("Dual", main, off))
@@ -1748,10 +1961,16 @@ class TrollheimApp(tk.Tk):
         return profiles_for_difficulties(difficulties)
 
     def _disable_simulation_buttons(self):
-        self.btn_run.config(state="disabled")
-        self.btn_equipment_run.config(state="disabled")
-        self.btn_weapons_run.config(state="disabled")
-        self.btn_combo_run.config(state="disabled")
+        for name in (
+            "btn_run", "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
+        ):
+            button = getattr(self, name, None)
+            if button is not None:
+                try:
+                    button.config(state="disabled")
+                except tk.TclError:
+                    # La pestaña dueña del botón puede estar descargada.
+                    pass
 
     @staticmethod
     def _run_tasks(tasks, progress_queue, total_simulations, completion_weights=None):
@@ -1775,12 +1994,18 @@ class TrollheimApp(tk.Tk):
                 report(result)
             return results
 
-        worker_count = min(8, os.cpu_count() or 4, len(tasks))
+        available_cpus = os.cpu_count() or 4
+        # La interfaz también quiere respirar mientras los dados hacen horas extra.
+        worker_limit = max(1, available_cpus - 1)
+        worker_count = min(8, worker_limit, len(tasks))
         group_count = min(32, len(process_tasks))
         groups = [process_tasks[index::group_count] for index in range(group_count)]
         results = []
 
-        with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        with ProcessPoolExecutor(
+            max_workers=worker_count,
+            initializer=_configure_simulation_worker,
+        ) as executor:
             futures = {
                 executor.submit(run_task_batch, group): len(group)
                 for group in groups if group
@@ -1813,19 +2038,22 @@ class TrollheimApp(tk.Tk):
         return unique_tasks, aliases
 
     def _enable_simulation_buttons(self):
-        self.btn_run.config(state="normal")
-        self.btn_equipment_run.config(state="normal")
-        self.btn_weapons_run.config(state="normal")
-        self.btn_combo_run.config(state="normal")
+        for name in (
+            "btn_run", "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
+        ):
+            button = getattr(self, name, None)
+            if button is not None:
+                try:
+                    button.config(state="normal")
+                except tk.TclError:
+                    # Igual que arriba: no hay botón que reactivar si la pestaña no existe.
+                    pass
 
     def start_simulation_thread(self):
 
         try:
 
-            base_candidate = (
-                self.candidate_config
-                .get_config_dict()
-            )
+            base_candidate = self._candidate_for_simulation()
             total_simulations = self._read_simulation_count(
                 self.simulations_improvements
             )
@@ -1855,6 +2083,7 @@ class TrollheimApp(tk.Tk):
         self._disable_simulation_buttons()
         self._active_progress_var = self.progress_var
         self._active_status_label = self.status_label
+        self._active_progress_bar = self.progress_bar
         self._active_button = self.btn_run
         self._progress_target = 0.0
         self._simulation_started_at = time.perf_counter()
@@ -1863,7 +2092,7 @@ class TrollheimApp(tk.Tk):
 
         self.progress_var.set(0)
         self.progress_bar.config(mode="indeterminate")
-        self.progress_bar.start(12)
+        self.progress_bar.start(PROGRESS_ANIMATION_MS)
 
         self.status_label.config(
             text=(
@@ -1873,10 +2102,7 @@ class TrollheimApp(tk.Tk):
 
         for row in self.results_tree.get_children():
             self.results_tree.delete(row)
-        for card in self.result_cards.values():
-            card["equipment"].config(text="Preparando equipo...")
-            card["rate"].config(text="Calculando...")
-            card["badge"].config(text="")
+        self._reset_mode_cards(self.result_cards, self.result_visible_modes)
 
         enemy_mode = (
             self.enemy_mode.get()
@@ -1909,10 +2135,7 @@ class TrollheimApp(tk.Tk):
 
             if enemy_mode == "custom":
 
-                custom_enemy = (
-                    self.enemy_config
-                    .get_config_dict()
-                )
+                custom_enemy = self._custom_enemy_for_simulation()
 
             else:
 
@@ -2032,7 +2255,9 @@ class TrollheimApp(tk.Tk):
                 total_tasks * total_simulations
             )
 
-            self._progress_poll_id = self.after(40, self._poll_simulation_progress)
+            self._progress_poll_id = self.after(
+                PROGRESS_POLL_MS, self._poll_simulation_progress
+            )
 
             for mode, label, win_rate, is_base in self._run_tasks(
                 tasks, progress_queue, total_simulations
@@ -2116,7 +2341,7 @@ class TrollheimApp(tk.Tk):
     def start_equipment_thread(self):
         try:
             base_candidate = self._without_optional_equipment(
-                self.candidate_config.get_config_dict()
+                self._candidate_for_simulation()
             )
             total_simulations = self._read_simulation_count(
                 self.simulations_equipment
@@ -2138,6 +2363,7 @@ class TrollheimApp(tk.Tk):
         self._disable_simulation_buttons()
         self._active_progress_var = self.equipment_progress_var
         self._active_status_label = self.equipment_status_label
+        self._active_progress_bar = self.equipment_progress_bar
         self._active_button = self.btn_equipment_run
         self._progress_target = 0.0
         self._simulation_started_at = time.perf_counter()
@@ -2146,15 +2372,13 @@ class TrollheimApp(tk.Tk):
 
         self.equipment_progress_var.set(0)
         self.equipment_progress_bar.config(mode="indeterminate")
-        self.equipment_progress_bar.start(12)
+        self.equipment_progress_bar.start(PROGRESS_ANIMATION_MS)
         self.equipment_status_label.config(text="Preparando combinaciones de objetos...")
         for row in self.equipment_tree.get_children():
             self.equipment_tree.delete(row)
-        for card in self.equipment_cards.values():
-            card["equipment"].config(text="Preparando equipo...")
-            card["rate"].config(text="Calculando...")
-            card["delta"].config(text="")
-            card["badge"].config(text="")
+        self._reset_mode_cards(
+            self.equipment_cards, self.equipment_visible_modes
+        )
 
         self._simulation_running = True
         threading.Thread(
@@ -2174,7 +2398,7 @@ class TrollheimApp(tk.Tk):
             custom_enemy = None
             active_pool_names = []
             if enemy_mode == "custom":
-                custom_enemy = self.enemy_config.get_config_dict()
+                custom_enemy = self._custom_enemy_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2229,7 +2453,9 @@ class TrollheimApp(tk.Tk):
                 f"Ejecutando {len(unique_tasks)} combates efectivos para "
                 f"{total_tasks} resultados...",
             )
-            self._progress_poll_id = self.after(40, self._poll_simulation_progress)
+            self._progress_poll_id = self.after(
+                PROGRESS_POLL_MS, self._poll_simulation_progress
+            )
 
             raw_results = {mode: [] for mode in modes}
             for mode, label, win_rate, _is_base in self._run_tasks(
@@ -2271,6 +2497,7 @@ class TrollheimApp(tk.Tk):
         self._update_mode_cards(
             self.equipment_cards, base_rates, user_mode_key, equipment
         )
+        self._equipment_card_data = (base_rates, user_mode_key, equipment)
         self._equipment_table_data = (equipment_results, equipment)
         self._render_equipment_table()
 
@@ -2331,10 +2558,11 @@ class TrollheimApp(tk.Tk):
                     equipment[best_mode],
                 ),
             )
+        self._autosize_tree_columns(self.equipment_tree)
 
     def start_weapon_thread(self):
         try:
-            base_candidate = self.candidate_config.get_config_dict()
+            base_candidate = self._candidate_for_simulation()
             total_simulations = self._read_simulation_count(self.simulations_weapons)
             weapons = self._selected_weapons()
             if not weapons:
@@ -2352,21 +2580,18 @@ class TrollheimApp(tk.Tk):
         self._disable_simulation_buttons()
         self._active_progress_var = self.weapon_progress_var
         self._active_status_label = self.weapon_status_label
+        self._active_progress_bar = self.weapon_progress_bar
         self._active_button = self.btn_weapons_run
         self._simulation_started_at = time.perf_counter()
         self._progress_indeterminate = True
         self._cancel_progress_poll()
         self.weapon_progress_var.set(0)
         self.weapon_progress_bar.config(mode="indeterminate")
-        self.weapon_progress_bar.start(12)
+        self.weapon_progress_bar.start(PROGRESS_ANIMATION_MS)
         self.weapon_status_label.config(text="Preparando configuraciones de armas...")
         for row in self.weapon_tree.get_children():
             self.weapon_tree.delete(row)
-        for card in self.weapon_cards.values():
-            card["equipment"].config(text="Preparando equipo...")
-            card["rate"].config(text="Calculando...")
-            card["delta"].config(text="")
-            card["badge"].config(text="")
+        self._reset_mode_cards(self.weapon_cards, self.weapon_visible_modes)
 
         self._simulation_running = True
         threading.Thread(
@@ -2382,7 +2607,7 @@ class TrollheimApp(tk.Tk):
             custom_enemy = None
             active_pool_names = []
             if enemy_mode == "custom":
-                custom_enemy = self.enemy_config.get_config_dict()
+                custom_enemy = self._custom_enemy_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2437,7 +2662,9 @@ class TrollheimApp(tk.Tk):
                 f"Ejecutando {len(unique_tasks)} combates efectivos para "
                 f"{total_tasks} configuraciones...",
             )
-            self._progress_poll_id = self.after(40, self._poll_simulation_progress)
+            self._progress_poll_id = self.after(
+                PROGRESS_POLL_MS, self._poll_simulation_progress
+            )
 
             raw_results = {mode: [] for mode in modes}
             for mode, label, win_rate, _is_base in self._run_tasks(
@@ -2477,6 +2704,7 @@ class TrollheimApp(tk.Tk):
         self._update_mode_cards(
             self.weapon_cards, base_rates, user_mode_key, equipment
         )
+        self._weapon_card_data = (base_rates, user_mode_key, equipment)
         self._weapon_table_data = (weapon_results, equipment)
         self._render_weapon_table()
         self._finish_progress(
@@ -2533,10 +2761,11 @@ class TrollheimApp(tk.Tk):
                     equipment[best_mode],
                 ),
             )
+        self._autosize_tree_columns(self.weapon_tree)
 
     def start_combo_thread(self):
         try:
-            base_candidate = self.candidate_config.get_config_dict()
+            base_candidate = self._candidate_for_simulation()
             total_simulations = self._read_simulation_count(self.simulations_combos)
         except ValueError:
             messagebox.showerror(
@@ -2557,6 +2786,7 @@ class TrollheimApp(tk.Tk):
         self._disable_simulation_buttons()
         self._active_progress_var = self.combo_progress_var
         self._active_status_label = self.combo_status_label
+        self._active_progress_bar = self.combo_progress_bar
         self._active_button = self.btn_combo_run
         self._progress_target = 0.0
         self._simulation_started_at = time.perf_counter()
@@ -2565,15 +2795,12 @@ class TrollheimApp(tk.Tk):
 
         self.combo_progress_var.set(0)
         self.combo_progress_bar.config(mode="indeterminate")
-        self.combo_progress_bar.start(12)
+        self.combo_progress_bar.start(PROGRESS_ANIMATION_MS)
         self.combo_status_label.config(text="Preparando combos...")
 
         for row in self.combo_tree.get_children():
             self.combo_tree.delete(row)
-        for card in self.combo_cards.values():
-            card["equipment"].config(text="Preparando equipo...")
-            card["rate"].config(text="Calculando...")
-            card["badge"].config(text="")
+        self._reset_mode_cards(self.combo_cards, self.combo_visible_modes)
 
         enemy_mode = self.enemy_mode.get()
         self._simulation_running = True
@@ -2590,7 +2817,7 @@ class TrollheimApp(tk.Tk):
             active_pool_names = []
 
             if enemy_mode == "custom":
-                custom_enemy = self.enemy_config.get_config_dict()
+                custom_enemy = self._custom_enemy_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2692,7 +2919,9 @@ class TrollheimApp(tk.Tk):
             )
 
             self._progress_chunk_total = total_tasks * total_simulations
-            self._progress_poll_id = self.after(40, self._poll_simulation_progress)
+            self._progress_poll_id = self.after(
+                PROGRESS_POLL_MS, self._poll_simulation_progress
+            )
 
             for mode, label, win_rate, _is_base in self._run_tasks(
                 unique_tasks, progress_queue, total_simulations, completion_weights
@@ -2731,20 +2960,13 @@ class TrollheimApp(tk.Tk):
     def update_ui_with_combo_results(self, combo_results, user_mode_key, equipment):
         base_rates = {mode: data[0] for mode, data in combo_results.items()}
         self._update_mode_cards(self.combo_cards, base_rates, user_mode_key, equipment)
+        self._combo_card_data = (base_rates, user_mode_key, equipment)
 
         self._combo_table_data = (combo_results, equipment)
         self._render_combo_table()
 
-        active_progress_var = getattr(
-            self,
-            "_active_progress_var",
-            self.combo_progress_var,
-        )
-        active_status_label = getattr(
-            self,
-            "_active_status_label",
-            self.combo_status_label,
-        )
+        active_progress_var = self._active_progress_var
+        active_status_label = self._active_status_label
 
         self._finish_progress(active_progress_var, active_status_label, "Análisis de combos completado")
         self._enable_simulation_buttons()
@@ -2786,24 +3008,22 @@ class TrollheimApp(tk.Tk):
                 "", "end",
                 values=(first, second, *cells, optimal, equipment[best_mode]),
             )
+        self._autosize_tree_columns(self.combo_tree)
 
     def _set_status(
         self,
         text,
     ):
-        label = getattr(self, "_active_status_label", self.status_label)
-        label.config(text=text)
+        label = getattr(self, "_active_status_label", None)
+        if label is not None:
+            label.config(text=text)
 
     def _switch_progress_to_determinate(self):
         if not getattr(self, "_progress_indeterminate", False):
             return
-        bars = {
-            id(self.progress_var): self.progress_bar,
-            id(self.equipment_progress_var): self.equipment_progress_bar,
-            id(self.weapon_progress_var): self.weapon_progress_bar,
-            id(self.combo_progress_var): self.combo_progress_bar,
-        }
-        bar = bars[id(self._active_progress_var)]
+        bar = getattr(self, "_active_progress_bar", None)
+        if bar is None:
+            return
         bar.stop()
         bar.config(mode="determinate")
         self._active_progress_var.set(0.0)
@@ -2860,16 +3080,10 @@ class TrollheimApp(tk.Tk):
             self._progress_chunks_done * 100.0 / total,
         )
 
-        progress_var = getattr(
-            self,
-            "_active_progress_var",
-            self.progress_var,
-        )
-        status_label = getattr(
-            self,
-            "_active_status_label",
-            self.status_label,
-        )
+        progress_var = getattr(self, "_active_progress_var", None)
+        status_label = getattr(self, "_active_status_label", None)
+        if progress_var is None or status_label is None:
+            return
 
         if not getattr(self, "_progress_indeterminate", False):
             current = target
@@ -2893,7 +3107,9 @@ class TrollheimApp(tk.Tk):
             )
 
         if getattr(self, "_simulation_running", False):
-            self._progress_poll_id = self.after(40, self._poll_simulation_progress)
+            self._progress_poll_id = self.after(
+                PROGRESS_POLL_MS, self._poll_simulation_progress
+            )
 
     def _simulation_error(
         self,
@@ -2904,12 +3120,9 @@ class TrollheimApp(tk.Tk):
         self._cancel_progress_poll()
         self._switch_progress_to_determinate()
 
-        active_status_label = getattr(
-            self,
-            "_active_status_label",
-            self.status_label,
-        )
-        active_status_label.config(text="Error.")
+        active_status_label = getattr(self, "_active_status_label", None)
+        if active_status_label is not None:
+            active_status_label.config(text="Error.")
 
         messagebox.showerror(
             "Error del simulador",
@@ -2924,20 +3137,13 @@ class TrollheimApp(tk.Tk):
     ):
         base_rates = {mode: data[0][1] for mode, data in mode_results.items()}
         self._update_mode_cards(self.result_cards, base_rates, user_mode_key, equipment)
+        self._results_card_data = (base_rates, user_mode_key, equipment)
 
         self._results_table_data = (mode_results, equipment)
         self._render_results_table()
 
-        active_progress_var = getattr(
-            self,
-            "_active_progress_var",
-            self.progress_var,
-        )
-        active_status_label = getattr(
-            self,
-            "_active_status_label",
-            self.status_label,
-        )
+        active_progress_var = self._active_progress_var
+        active_status_label = self._active_status_label
 
         self._finish_progress(active_progress_var, active_status_label, "Análisis completado")
 
@@ -2975,3 +3181,4 @@ class TrollheimApp(tk.Tk):
                 "", "end",
                 values=(label, *cells, optimal, equipment[best_mode]),
             )
+        self._autosize_tree_columns(self.results_tree)

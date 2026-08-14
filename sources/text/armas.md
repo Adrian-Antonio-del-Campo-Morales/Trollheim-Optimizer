@@ -3,7 +3,7 @@
 Consulta rápida del equipo que puede cambiar un duelo. Las páginas indicadas son
 las páginas físicas de los PDF, no necesariamente la numeración impresa.
 
-## Armas generales presentes en el simulador
+## Armas generales
 
 | Arma | Regla relevante resumida | Fuente |
 |---|---|---|
@@ -30,7 +30,7 @@ las páginas físicas de los PDF, no necesariamente la numeración impresa.
 | Bagh Nakh | Par de armas; ataque adicional, +1 F y penetración. | `khemri.pdf`, p. 20 |
 | Rompe Espadas | Parada y posibilidad de atrapar/destruir el arma enemiga. | `caos-en-las-calles.pdf`, p. 63 |
 
-## Armas exclusivas presentes en el simulador
+## Armas exclusivas de banda
 
 | Arma | Regla relevante resumida | Fuente |
 |---|---|---|
@@ -54,9 +54,9 @@ las páginas físicas de los PDF, no necesariamente la numeración impresa.
 | Garfio largo | Dos manos y prioridad por alcance. | `lustria.pdf`, p. 86 |
 | Azote pirata | No puede pararse; +1 A al cargar/ser cargado y favorece la salvación enemiga. | `lustria.pdf`, equipo pirata |
 
-## Armas relevantes que aún no están en el simulador
+## Otras armas relevantes
 
-| Arma | Efecto que habría que modelar | Fuente |
+| Arma | Regla relevante resumida | Fuente |
 |---|---|---|
 | Pistola y pistola de duelo | Un ataque de F4 por pistola en la primera ronda de combate, con penetración. | `trollheim.pdf`, pp. 47-48 |
 | Bo | Dos manos, parada y ataque adicional. | `khemri.pdf`, p. 121 |
@@ -72,7 +72,7 @@ las páginas físicas de los PDF, no necesariamente la numeración impresa.
 | Cuchillo de Muerte | F-1, niega armadura y suma +1 en la Tabla de Heridas. | `caos-en-las-calles.pdf`, p. 159 |
 | Daga de Ponzoña | Regla de daga; con 6 al impactar puede causar otra herida tras chequeo de R. | `lustria.pdf`, p. 76 |
 | Incensario | Dos manos, +2 F en primera ronda y chequeos de R que pueden herir a ambos. | `lustria.pdf`, p. 76 |
-| Bola con Cadena | Arma exclusiva goblin diferenciada en el catálogo; falta localizar/modelar su ficha completa. | `caos-en-las-calles.pdf`, p. 237 |
+| Bola con Kadena | F+2, 1D3 heridas, niega armadura, -1 para impactar al portador y exige Hongos Pirakabezas. | `caos-en-las-calles.pdf`, p. 128 |
 
 ## Equivalencias que no necesitan una entrada propia
 
@@ -80,10 +80,8 @@ las páginas físicas de los PDF, no necesariamente la numeración impresa.
 - La Daga de Zakrificioz combate como una daga corriente; su sacrificio sólo
   modifica magia y Liderazgo antes de la batalla (`lustria.pdf`, p. 99).
 - Garrote a dos manos usa el perfil de arma a dos manos.
-- Las lanzas de caballería y otras armas montadas quedan fuera mientras no se
-  simulen monturas.
+- Las lanzas de caballería y otras armas montadas aplican sus reglas cuando el
+  portador combate montado.
 
-Los artefactos de campaña, armas de montura y objetos cuya única regla se
-resuelve fuera del cuerpo a cuerpo no se conservan aquí. Las piezas exclusivas
-que sí alteren impacto, herida, ataques, iniciativa, parada, daño o salvación
-deben incorporarse a esta ficha cuando se modelen.
+Los artefactos de campaña y objetos cuya única regla se resuelve fuera del
+cuerpo a cuerpo se consultan en los volcados completos.

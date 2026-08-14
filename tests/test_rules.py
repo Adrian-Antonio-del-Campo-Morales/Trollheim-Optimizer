@@ -14,10 +14,14 @@ from trollheim_simulator.engine import (
     _nb_to_wound,
     _poison_for_attack,
     _parry_profile,
+    _phase_attack_count,
+    _phase_weapon_for_attack,
     _weapon_for_attack,
 )
 from trollheim_simulator.rules import (
     OFF_NONE,
+    OFF_SHIELD,
+    OFF_BUCKLER,
     WEAPON_2H,
     WEAPON_MACE,
     WEAPON_DAGGER,
@@ -31,8 +35,20 @@ from trollheim_simulator.rules import (
     WEAPON_SPIKED_GAUNTLET,
     WEAPON_WITCH_BLADE,
     WEAPON_PIRATE_SCOURGE,
+    WEAPON_PISTOL,
+    WEAPON_DUELING_PISTOL,
+    WEAPON_POISONED_DAGGERS,
+    WEAPON_SUN_GAUNTLET,
+    WEAPON_DRAICH,
+    WEAPON_DEATH_KNIFE,
+    WEAPON_BALL_AND_CHAIN,
     WEAPONS_EXCLUSIVE,
     WEAPONS_GENERAL,
+    OFF_HAND_OPTIONS,
+    WEAPON_CODES,
+    OFFHAND_CODES,
+    ARMORS,
+    ARMOR_CODES,
     POISON_BLACK_VENOM,
     POISON_REPTILE,
     POISON_BLACK_LOTUS,
@@ -123,6 +139,9 @@ def test_weapon_catalog_is_split_without_duplicates():
     assert "Espada" in WEAPONS_GENERAL
     assert "Martillo Sigmarita" in WEAPONS_EXCLUSIVE
     assert set(WEAPONS_GENERAL).isdisjoint(WEAPONS_EXCLUSIVE)
+    assert set(WEAPONS_GENERAL + WEAPONS_EXCLUSIVE) == set(WEAPON_CODES)
+    assert set(OFF_HAND_OPTIONS) == set(OFFHAND_CODES)
+    assert set(ARMORS) == set(ARMOR_CODES)
 
 
 def test_band_weapons_apply_their_core_mechanics():
@@ -185,9 +204,69 @@ def test_choppa_only_accepts_shield_or_spiked_gauntlet():
         }
     )
     assert invalid[7] == OFF_NONE
-    assert shield[7] == OFF_NONE
+    assert shield[7] == OFF_SHIELD
     assert shield[8] == 6
     assert gauntlet[7] == WEAPON_SPIKED_GAUNTLET
+
+
+def test_buckler_parries_without_granting_armour_or_an_attack():
+    fighter = _make_fighter(BASE_FIGHTER | {"off_hand": "Rodela"})
+    assert fighter[7] == OFF_BUCKLER
+    assert fighter[8] == 7
+    assert _parry_profile(fighter) == (1, True)
+
+
+def test_new_manual_weapon_profiles_are_encoded():
+    pistol = _make_fighter(BASE_FIGHTER | {"main_weapon": "Pistola"})
+    duel = _make_fighter(BASE_FIGHTER | {"main_weapon": "Pistola de Duelo"})
+    daggers = _make_fighter(BASE_FIGHTER | {"main_weapon": "Dagas Envenenadas"})
+    sun = _make_fighter(BASE_FIGHTER | {"off_hand": "Guantelete Solar"})
+    draich = _make_fighter(BASE_FIGHTER | {"main_weapon": "Draich"})
+    death = _make_fighter(BASE_FIGHTER | {"main_weapon": "Cuchillo de Muerte"})
+    assert pistol[6] == WEAPON_PISTOL
+    assert duel[6] == WEAPON_DUELING_PISTOL
+    assert daggers[6] == WEAPON_POISONED_DAGGERS
+    assert _poison_for_attack(daggers, 0) == POISON_BLACK_LOTUS
+    assert sun[7] == WEAPON_SUN_GAUNTLET
+    assert _attack_strength(draich, WEAPON_DRAICH, False) == 5
+    assert _attack_strength(death, WEAPON_DEATH_KNIFE, False) == 2
+
+
+def test_additional_armour_profiles_use_their_melee_saves():
+    assert _armor_base_save("Armadura de Ithilmar") == 5
+    assert _armor_base_save("Cuero Endurecido") == 6
+    assert _armor_base_save("Armadura de Placas") == 4
+    assert _armor_base_save("Ropajes de Asesino Eshin") == 6
+    assert _armor_base_save("Capa de Dragón Marino") == 5
+
+
+def test_pistols_only_add_their_melee_attack_in_the_first_round():
+    offhand = _make_fighter(BASE_FIGHTER | {"off_hand": "Pistola"})
+    main = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Pistola", "off_hand": "Espada"}
+    )
+    assert _phase_attack_count(offhand, True) == 2
+    assert _phase_attack_count(offhand, False) == 1
+    assert _phase_weapon_for_attack(main, 0, True) == WEAPON_SWORD
+    assert _phase_weapon_for_attack(main, 1, True) == WEAPON_PISTOL
+    assert _phase_weapon_for_attack(main, 0, False) == WEAPON_SWORD
+
+
+def test_ball_and_chain_bundles_its_required_mushrooms_and_drops_other_gear():
+    fighter = _make_fighter(
+        BASE_FIGHTER | {
+            "main_weapon": "Bola con Kadena",
+            "off_hand": "Escudo",
+            "armor": "Armadura Pesada",
+            "has_helmet": True,
+        }
+    )
+    assert fighter[6] == WEAPON_BALL_AND_CHAIN
+    assert fighter[7] == OFF_NONE
+    assert fighter[8] == 7
+    assert fighter[10] == 0
+    assert fighter[14] == PREPARATION_HEAD_SPLITTER
+    assert _attack_strength(fighter, WEAPON_BALL_AND_CHAIN, False) == 5
 
 
 def test_pirate_scourge_improves_enemy_armour_save():
