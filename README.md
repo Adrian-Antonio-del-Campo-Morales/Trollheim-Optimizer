@@ -11,11 +11,11 @@ El programa calcula estimaciones estadísticas. No sustituye al reglamento, al
 La versión portable es la opción más sencilla para Windows: consiste en un
 único archivo y no necesita instalación, Python ni compilación.
 
-[Descargar Trollheim Optimizer Portable 5.0.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v5.0.0/Trollheim-Optimizer-Portable-5.0.0.exe)
+[Descargar Trollheim Optimizer Portable 5.0.1](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v5.0.1/Trollheim-Optimizer-Portable-5.0.1.exe)
 
 Para utilizarla:
 
-1. Descarga `Trollheim-Optimizer-Portable-5.0.0.exe`.
+1. Descarga `Trollheim-Optimizer-Portable-5.0.1.exe`.
 2. Guarda el archivo donde quieras, por ejemplo en el escritorio o en una
    memoria USB.
 3. Haz doble clic sobre él para abrir el simulador.
@@ -58,17 +58,26 @@ python -m pip install -e .
 trollheim
 ```
 
-### Guardar candidatos
+### Guardar y cargar libros de simulación
 
 En la pestaña **Candidato** puedes escribir un nombre y, opcionalmente,
 seleccionar una banda y un tipo de guerrero. Al elegir un perfil, se cargan sus
 atributos y solo quedan disponibles las armas, protecciones y categorías de
 habilidades válidas que el simulador puede representar.
 
-**Guardar libro…** crea un `.xlsx` legible y reutilizable. Las hojas
-`Candidato` y `Enemigos` conservan la ficha principal, todos los rivales
-manuales y la configuración de la muestra aleatoria; el resto del libro queda
-preparado para añadir resultados. **Cargar libro…** recupera todo ese estado.
+**Guardar** crea un `.xlsx` legible y reutilizable. Las hojas `Candidato` y
+`Enemigos` conservan la ficha principal, todos los rivales manuales y la
+configuración de la muestra aleatoria. Cada análisis calculado se guarda en su
+propia hoja. **Cargar** recupera todo ese estado y los resultados. **Cargar
+Candidato** y **Cargar Enemigos** permiten reemplazar solamente esa parte del
+libro; la segunda opción activa automáticamente el rival configurable.
+
+## Versión congelada por equipo
+
+La versión **5.0.1** es la última versión estable del modelo «por equipo»: cada
+análisis compara por separado arma con mano libre, arma con escudo, dos armas y
+arma a dos manos. Queda identificada por la etiqueta Git `v5.0.1` antes de los
+cambios funcionales mayores de las versiones siguientes.
 
 ## Desarrollo
 

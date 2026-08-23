@@ -8,6 +8,7 @@ import threading
 import time
 import tkinter as tk
 import unicodedata
+from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import combinations_with_replacement
 from tkinter import filedialog, font as tkfont, messagebox, ttk
@@ -1008,12 +1009,20 @@ class TrollheimApp(tk.Tk):
         ttk.Label(book_toolbar, text="Libro de simulación", font=("Arial", 9, "bold")).pack(
             side="left"
         )
-        ttk.Button(book_toolbar, text="Guardar libro…", command=self._save_candidate).pack(
-            side="right"
+        book_actions = (
+            ("Guardar", self._save_candidate,
+             "Guarda el candidato, los enemigos y todas las simulaciones calculadas en un libro de Excel."),
+            ("Cargar", self._load_candidate,
+             "Carga el candidato, los enemigos y las simulaciones guardadas en un libro de Excel."),
+            ("Cargar Candidato", self._load_candidate_only,
+             "Carga únicamente el candidato del libro y reemplaza el candidato actual."),
+            ("Cargar Enemigos", self._load_enemies_only,
+             "Carga únicamente los enemigos, reemplaza los actuales y activa el modo Rival configurable."),
         )
-        ttk.Button(book_toolbar, text="Cargar libro…", command=self._load_candidate).pack(
-            side="right", padx=(0, 6)
-        )
+        for text, command, tooltip in reversed(book_actions):
+            button = ttk.Button(book_toolbar, text=text, command=command)
+            button.pack(side="right", padx=(6, 0))
+            ToolTip(button, tooltip)
 
         self.notebook = ttk.Notebook(self)
 
@@ -1314,18 +1323,105 @@ class TrollheimApp(tk.Tk):
             "level": self.enemy_level.get(),
             "description": ", ".join(difficulties) if self.enemy_mode.get() == "sample" else "Perfil configurable",
         }
-        enemy_profiles = (
-            self._custom_enemies_for_simulation()
-            if self.enemy_mode.get() == "custom" else []
-        )
+        # Se conservan también mientras está activa la muestra aleatoria: así
+        # "Cargar Enemigos" siempre puede recuperar los perfiles configurados.
+        enemy_profiles = self._custom_enemies_for_simulation()
         return {
-            "config": self._candidate_config_dict(), "candidate": self._candidate_metadata(),
+            "config": self._candidate_for_simulation(), "candidate": self._candidate_metadata(),
             "opponent": opponent,
             "enemies": {
                 "mode": self.enemy_mode.get(), "level": self.enemy_level.get(),
                 "difficulties": difficulties, "profiles": enemy_profiles,
             },
+            "results": self._simulation_results_payload(),
         }
+
+    def _simulation_results_payload(self):
+        specs = (
+            ("results", "Comparativa de mejoras", self.simulations_improvements),
+            ("combos", "Combos de mejoras", self.simulations_combos),
+            ("weapons", "Configuraciones de armas", self.simulations_weapons),
+            ("equipment", "Equipamiento", self.simulations_equipment),
+        )
+        results = []
+        for target, title, count_var in specs:
+            table_data = getattr(self, f"_{target.rstrip('s')}_table_data", None)
+            card_data = getattr(self, f"_{target.rstrip('s')}_card_data", None)
+            # Los dos nombres irregulares son históricos y se mantienen en la UI.
+            if target == "results":
+                table_data = getattr(self, "_results_table_data", None)
+                card_data = getattr(self, "_results_card_data", None)
+            elif target == "equipment":
+                table_data = getattr(self, "_equipment_table_data", None)
+                card_data = getattr(self, "_equipment_card_data", None)
+            if not table_data:
+                continue
+            headers, rows = self._result_export_rows(target, table_data)
+            results.append({
+                "target": target, "title": title,
+                "iterations": int(count_var.get()),
+                "generated_at": getattr(self, f"_{target}_generated_at", datetime.now().isoformat(timespec="seconds")),
+                "opponent": self._opponent_description(),
+                "view": {"results": self.results_view, "combos": self.combo_view,
+                         "weapons": self.weapon_view, "equipment": self.equipment_view}[target].get(),
+                "headers": headers, "rows": rows,
+                "table_data": table_data, "card_data": card_data,
+            })
+        return results
+
+    def _opponent_description(self):
+        if self.enemy_mode.get() == "custom":
+            names = [p.get("enemy_name", "Enemigo") for p in self._custom_enemies_for_simulation()]
+            return f"Rival configurable (nivel {self.enemy_level.get()}): {', '.join(names)}"
+        difficulties = [name for name, var in self.enemy_difficulties.items() if var.get()]
+        return f"Muestra aleatoria (nivel {self.enemy_level.get()}): {', '.join(difficulties)}"
+
+    @staticmethod
+    def _result_export_rows(target, table_data):
+        data, equipment = table_data
+        label_headers = {
+            "results": ("Mejora",), "combos": ("Mejora 1", "Mejora 2"),
+            "weapons": ("Arma principal", "Mano secundaria"),
+            "equipment": ("Objeto 1", "Objeto 2", "Objeto 3"),
+        }[target]
+        headers = (*label_headers, *(f"{title} %" for _mode, title in COMBAT_MODES),
+                   *(f"Impacto {title} %" for _mode, title in COMBAT_MODES), "Mejor modo", "Equipo óptimo")
+        rows_by_label = {}
+        base_rates = {}
+        for mode, mode_data in data.items():
+            if target == "results":
+                base, values = mode_data
+                base_rates[mode] = base[1]
+            else:
+                base_rates[mode], values = mode_data
+            for label, rate, impact in values:
+                rows_by_label.setdefault(label, {})[mode] = (rate, impact)
+        rows_by_label = {"ESTADO BASE": {mode: (rate, 0.0) for mode, rate in base_rates.items()}, **rows_by_label}
+        rows = []
+        for label, values in rows_by_label.items():
+            parts = {
+                "results": (label,), "combos": tuple(label.split(" + ", 1)),
+                "weapons": tuple(label.split(" || ", 1)),
+                "equipment": tuple(label.split(" || ", 2)),
+            }[target]
+            parts = (*parts, *("—" for _ in range(len(label_headers) - len(parts))))
+            available = {
+                mode: result for mode, result in values.items()
+                if result and result[0] is not None
+            }
+            if not available:
+                continue
+            best_mode = max(available, key=lambda mode: available[mode][0])
+            rates = tuple(
+                available[mode][0] if mode in available else None
+                for mode, _title in COMBAT_MODES
+            )
+            impacts = tuple(
+                available[mode][1] if mode in available else None
+                for mode, _title in COMBAT_MODES
+            )
+            rows.append((*parts, *rates, *impacts, best_mode, equipment.get(best_mode, "—")))
+        return headers, rows
 
     def _save_candidate(self):
         default_name = re.sub(r"[^\w.-]+", "_", self.candidate_name.get().strip(), flags=re.UNICODE).strip("_") or "Candidato"
@@ -1337,7 +1433,7 @@ class TrollheimApp(tk.Tk):
             return
         try:
             save_candidate_workbook(path, self._candidate_workbook_payload())
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, KeyError, TypeError) as exc:
             messagebox.showerror("No se pudo guardar", str(exc))
             return
         self.candidate_workbook_path = path
@@ -1354,7 +1450,7 @@ class TrollheimApp(tk.Tk):
             return
         try:
             payload = load_candidate_workbook(path)
-            self._restore_candidate_payload(payload["config"])
+            self._restore_candidate_state(payload["config"])
             enemies = payload.get("enemies") or {}
             self.enemy_mode.set(enemies.get("mode", self.enemy_mode.get()))
             self.enemy_level.set(int(enemies.get("level", self.enemy_level.get())))
@@ -1362,15 +1458,86 @@ class TrollheimApp(tk.Tk):
             if selected_difficulties:
                 for name, variable in self.enemy_difficulties.items():
                     variable.set(name in selected_difficulties)
-            profiles = enemies.get("profiles") or ()
-            if profiles:
-                self._enemy_profiles = [dict(profile) for profile in profiles]
-                self._warrior_snapshots["enemy"] = [dict(profile) for profile in profiles]
+            self._restore_enemies_state(enemies, force_custom=False)
+            self._restore_results_state(payload.get("results") or ())
         except (OSError, CandidateWorkbookError, KeyError, ValueError) as exc:
             messagebox.showerror("No se pudo cargar", str(exc))
             return
         self.candidate_workbook_path = path
-        messagebox.showinfo("Libro cargado", "El candidato y los enemigos se han recuperado correctamente.")
+        messagebox.showinfo("Libro cargado", "El candidato, los enemigos y las simulaciones se han recuperado correctamente.")
+
+    def _choose_workbook(self, title):
+        return filedialog.askopenfilename(title=title, filetypes=(("Libro de Excel", "*.xlsx"),))
+
+    def _load_candidate_only(self):
+        path = self._choose_workbook("Cargar candidato")
+        if not path:
+            return
+        try:
+            payload = load_candidate_workbook(path)
+            self._restore_candidate_state(payload["config"])
+        except (OSError, CandidateWorkbookError, KeyError, ValueError) as exc:
+            messagebox.showerror("No se pudo cargar", str(exc))
+            return
+        messagebox.showinfo("Candidato cargado", "El candidato actual se ha reemplazado correctamente.")
+
+    def _load_enemies_only(self):
+        path = self._choose_workbook("Cargar enemigos")
+        if not path:
+            return
+        try:
+            payload = load_candidate_workbook(path)
+            self._restore_enemies_state(payload["enemies"], force_custom=True)
+        except (OSError, CandidateWorkbookError, KeyError, ValueError) as exc:
+            messagebox.showerror("No se pudo cargar", str(exc))
+            return
+        messagebox.showinfo("Enemigos cargados", "Los enemigos actuales se han reemplazado y se ha activado Rival configurable.")
+
+    def _restore_candidate_state(self, config):
+        self._warrior_snapshots["candidate"] = dict(config)
+        self.candidate_name.set(config.get("candidate_name", "Candidato"))
+        self.candidate_band_id.set(config.get("candidate_band_id", ""))
+        self.candidate_profile_id.set(config.get("candidate_profile_id", ""))
+        if "candidate" in self._built_tabs:
+            self._restore_candidate_payload(config)
+
+    def _restore_enemies_state(self, enemies, force_custom=False):
+        profiles = [dict(profile) for profile in (enemies.get("profiles") or ())]
+        if not profiles:
+            profiles = [{"enemy_name": "Enemigo 1"}]
+        was_built = "enemy" in self._built_tabs
+        if was_built:
+            self._unload_tab("enemy")
+        self.enemy_mode.set("custom" if force_custom else enemies.get("mode", "sample"))
+        self.enemy_level.set(int(enemies.get("level", self.enemy_level.get())))
+        selected = set(enemies.get("difficulties") or ())
+        for name, variable in self.enemy_difficulties.items():
+            variable.set(name in selected)
+        self._enemy_profiles = profiles
+        self._warrior_snapshots["enemy"] = [dict(profile) for profile in profiles]
+        if was_built:
+            self._build_lazy_tab("enemy")
+
+    def _restore_results_state(self, results):
+        for result in results:
+            target = result.get("target")
+            if target not in {"results", "combos", "weapons", "equipment"}:
+                continue
+            setattr(self, f"_{target}_generated_at", result.get("generated_at"))
+            table_name = {"results": "_results_table_data", "combos": "_combo_table_data",
+                          "weapons": "_weapon_table_data", "equipment": "_equipment_table_data"}[target]
+            card_name = {"results": "_results_card_data", "combos": "_combo_card_data",
+                         "weapons": "_weapon_card_data", "equipment": "_equipment_card_data"}[target]
+            setattr(self, table_name, result.get("table_data"))
+            setattr(self, card_name, result.get("card_data"))
+            count_var = {"results": self.simulations_improvements, "combos": self.simulations_combos,
+                         "weapons": self.simulations_weapons, "equipment": self.simulations_equipment}[target]
+            count_var.set(str(result.get("iterations", count_var.get())))
+            view_var = {"results": self.results_view, "combos": self.combo_view,
+                        "weapons": self.weapon_view, "equipment": self.equipment_view}[target]
+            view_var.set(result.get("view", view_var.get()))
+            if target in self._built_tabs:
+                self._restore_simulation_tab(target)
 
     def _restore_candidate_payload(self, config):
         self.candidate_name.set(config.get("candidate_name", "Candidato"))
@@ -3149,6 +3316,7 @@ class TrollheimApp(tk.Tk):
         )
         self._equipment_card_data = (base_rates, user_mode_key, equipment)
         self._equipment_table_data = (equipment_results, equipment)
+        self._equipment_generated_at = datetime.now().isoformat(timespec="seconds")
         self._render_equipment_table()
 
         self._finish_progress(
@@ -3358,6 +3526,7 @@ class TrollheimApp(tk.Tk):
         )
         self._weapon_card_data = (base_rates, user_mode_key, equipment)
         self._weapon_table_data = (weapon_results, equipment)
+        self._weapons_generated_at = datetime.now().isoformat(timespec="seconds")
         self._render_weapon_table()
         self._finish_progress(
             self.weapon_progress_var,
@@ -3614,6 +3783,7 @@ class TrollheimApp(tk.Tk):
         self._combo_card_data = (base_rates, user_mode_key, equipment)
 
         self._combo_table_data = (combo_results, equipment)
+        self._combos_generated_at = datetime.now().isoformat(timespec="seconds")
         self._render_combo_table()
 
         active_progress_var = self._active_progress_var
@@ -3791,6 +3961,7 @@ class TrollheimApp(tk.Tk):
         self._results_card_data = (base_rates, user_mode_key, equipment)
 
         self._results_table_data = (mode_results, equipment)
+        self._results_generated_at = datetime.now().isoformat(timespec="seconds")
         self._render_results_table()
 
         active_progress_var = self._active_progress_var

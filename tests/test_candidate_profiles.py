@@ -3,10 +3,12 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from trollheim_simulator.candidate_catalog import find_profile, load_bands
+from trollheim_simulator.ui import TrollheimApp
 from trollheim_simulator.workbooks import (
     DATA_SHEET,
     ENEMIES_SHEET,
     RESULTS_INDEX_SHEET,
+    RESULT_SHEET_PREFIX,
     SUMMARY_SHEET,
     load_candidate_workbook,
     save_candidate_workbook,
@@ -133,3 +135,61 @@ def test_candidate_workbook_round_trip_and_preserves_result_sheets(tmp_path: Pat
     assert "Mejoras 001" in workbook.sheetnames
     assert workbook["Mejoras 001"]["A1"].value == "resultado futuro"
     assert load_candidate_workbook(path)["config"]["HA"] == 5
+
+
+def test_workbook_saves_and_loads_each_simulation_on_its_own_sheet(tmp_path: Path):
+    path = tmp_path / "simulaciones.xlsx"
+    payload = _payload()
+    payload["results"] = [
+        {
+            "target": "results", "title": "Comparativa de mejoras",
+            "generated_at": "2026-08-23T10:30:00", "iterations": 25000,
+            "opponent": "Rival configurable: Bruto", "view": "optimal",
+            "headers": ["Mejora", "Mano libre %", "Impacto %"],
+            "rows": [["ESTADO BASE", 41.25, 0.0], ["Golpe Poderoso", 49.5, 8.25]],
+            "table_data": {"Single": [["ESTADO BASE", 41.25, 0.0], []]},
+            "card_data": [{"Single": 41.25}, "Single", {"Single": "Espada"}],
+        },
+        {
+            "target": "weapons", "title": "Configuraciones de armas",
+            "generated_at": "2026-08-23T10:35:00", "iterations": 10000,
+            "opponent": "Rival configurable: Bruto", "view": "equipment",
+            "headers": ["Principal", "Secundaria", "Victoria %"],
+            "rows": [["Espada", "Daga", 52.75]],
+            "table_data": {"Single": [40.0, []]}, "card_data": None,
+        },
+    ]
+
+    save_candidate_workbook(path, payload)
+    restored = load_candidate_workbook(path)
+    assert [result["target"] for result in restored["results"]] == ["results", "weapons"]
+
+    workbook = load_workbook(path, data_only=False)
+    result_sheets = [name for name in workbook.sheetnames if name.startswith(RESULT_SHEET_PREFIX)]
+    assert len(result_sheets) == 2
+    assert workbook[RESULTS_INDEX_SHEET]["B7"].value == "Comparativa de mejoras"
+    assert workbook[RESULTS_INDEX_SHEET]["C8"].value == 10000
+    first_values = [cell.value for row in workbook[result_sheets[0]].iter_rows() for cell in row]
+    assert "Golpe Poderoso" in first_values
+    assert 49.5 in first_values
+
+
+def test_result_export_allows_rows_that_do_not_apply_to_every_combat_mode():
+    table_data = (
+        {
+            "Single": [40.0, [["Espada || Ninguna", 45.0, 5.0]]],
+            "Shield": [42.0, []],
+            "Dual": [43.0, []],
+            "TwoHand": [44.0, []],
+        },
+        {"Single": "Espada", "Shield": "Espada + escudo",
+         "Dual": "Espada + daga", "TwoHand": "Arma a dos manos"},
+    )
+
+    headers, rows = TrollheimApp._result_export_rows("weapons", table_data)
+
+    weapon_row = next(row for row in rows if row[0] == "Espada")
+    assert len(weapon_row) == len(headers)
+    assert weapon_row[2] == 45.0
+    assert weapon_row[3:6] == (None, None, None)
+    assert weapon_row[-2:] == ("Single", "Espada")

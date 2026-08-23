@@ -1,4 +1,4 @@
-"""Libros de candidatos y, más adelante, de resultados de simulación."""
+"""Persistencia de candidatos, enemigos y resultados de simulación en Excel."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from .candidate_catalog import (
     GENERAL_SKILL_DESCRIPTIONS,
@@ -23,6 +24,7 @@ DATA_SHEET = "_Trollheim"
 SUMMARY_SHEET = "Candidato"
 ENEMIES_SHEET = "Enemigos"
 RESULTS_INDEX_SHEET = "Índice de resultados"
+RESULT_SHEET_PREFIX = "Resultado · "
 
 NAVY = "17243A"
 TEAL = "287D7A"
@@ -265,9 +267,62 @@ def find_profile_for_workbook(config):
     return f"{profile.band_name} · {profile.name}" if profile else "Selección libre"
 
 
-def _build_index(workbook) -> None:
-    if RESULTS_INDEX_SHEET in workbook.sheetnames:
-        return
+def _result_sheet_name(title: str, used: set[str]) -> str:
+    base = f"{RESULT_SHEET_PREFIX}{title}"[:31]
+    name = base
+    suffix = 2
+    while name in used:
+        tail = f" {suffix}"
+        name = f"{base[:31 - len(tail)]}{tail}"
+        suffix += 1
+    used.add(name)
+    return name
+
+
+def _build_result_sheet(workbook, result: dict, sheet_name: str) -> None:
+    ws = workbook.create_sheet(sheet_name)
+    ws.sheet_view.showGridLines = False
+    ws.freeze_panes = "A8"
+    headers = tuple(result.get("headers") or ())
+    end_column = max(6, len(headers))
+    ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=end_column)
+    ws["A1"] = f"TROLLHEIM · {result.get('title', 'RESULTADOS').upper()}"
+    ws["A1"].fill = PatternFill("solid", fgColor=NAVY)
+    ws["A1"].font = Font(color=WHITE, bold=True, size=16)
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    _label_value(ws, 4, "Fecha", result.get("generated_at", "—"), 1)
+    _label_value(ws, 4, "Iteraciones", result.get("iterations", 0), 5)
+    _label_value(ws, 5, "Rival", result.get("opponent", "—"), 1)
+    _label_value(ws, 5, "Vista", result.get("view", "—"), 5)
+    for column, header in enumerate(headers, 1):
+        cell = ws.cell(7, column, header)
+        cell.fill = PatternFill("solid", fgColor=TEAL)
+        cell.font = Font(color=WHITE, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for row_index, values in enumerate(result.get("rows") or (), 8):
+        for column, value in enumerate(values, 1):
+            cell = ws.cell(row_index, column, value)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if isinstance(value, float):
+                cell.number_format = "0.00"
+    for column in range(1, max(1, len(headers)) + 1):
+        letter = get_column_letter(column)
+        longest = max(
+            [len(str(ws.cell(row, column).value or "")) for row in range(7, ws.max_row + 1)]
+            or [12]
+        )
+        ws.column_dimensions[letter].width = min(42, max(13, longest + 2))
+    ws.auto_filter.ref = f"A7:{ws.cell(max(7, ws.max_row), max(1, len(headers))).coordinate}"
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+
+def _build_results(workbook, results) -> None:
+    for title in tuple(workbook.sheetnames):
+        if title.startswith(RESULT_SHEET_PREFIX):
+            del workbook[title]
+    _safe_sheet_remove(workbook, RESULTS_INDEX_SHEET)
     ws = workbook.create_sheet(RESULTS_INDEX_SHEET)
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:F2")
@@ -285,6 +340,19 @@ def _build_index(workbook) -> None:
     for column, width in enumerate((20, 24, 14, 28, 16, 24), 1):
         ws.column_dimensions[chr(64 + column)].width = width
     ws.freeze_panes = "A7"
+    used = set(workbook.sheetnames)
+    for row, result in enumerate(results or (), 7):
+        sheet_name = _result_sheet_name(str(result.get("title", "Simulación")), used)
+        _build_result_sheet(workbook, result, sheet_name)
+        values = (
+            result.get("generated_at", "—"), result.get("title", "Simulación"),
+            result.get("iterations", 0), result.get("opponent", "—"),
+            result.get("view", "—"), sheet_name,
+        )
+        for column, value in enumerate(values, 1):
+            ws.cell(row, column, value)
+        ws.cell(row, 6).hyperlink = f"#'{sheet_name}'!A1"
+        ws.cell(row, 6).style = "Hyperlink"
 
 
 def save_candidate_workbook(path, payload: dict) -> Path:
@@ -294,7 +362,7 @@ def save_candidate_workbook(path, payload: dict) -> Path:
         del workbook["Sheet"]
     _build_summary(workbook, payload)
     _build_enemies(workbook, payload)
-    _build_index(workbook)
+    _build_results(workbook, payload.get("results", ()))
     _safe_sheet_remove(workbook, DATA_SHEET)
     data = workbook.create_sheet(DATA_SHEET)
     data.sheet_state = "veryHidden"
