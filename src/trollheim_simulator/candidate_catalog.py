@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import re
 import sys
 import unicodedata
 
@@ -14,6 +15,8 @@ from .rules import (
     ARMORS,
     MAIN_HAND_FORBIDDEN_WEAPONS,
     OFF_HAND_OPTIONS,
+    POISONS,
+    PREPARATIONS,
     SKILLS,
     WEAPON_MATERIALS,
     WEAPONS_ALL,
@@ -139,12 +142,42 @@ ITEM_TO_OPTION = {
     "light_armour": "Armadura Ligera", "heavy_armour": "Armadura Pesada",
     "gromril_armour": "Armadura de Gromril", "ithilmar_armour": "Armadura de Ithilmar",
     "hardened_leather": "Cuero Endurecido", "plate_armour": "Armadura de Placas",
-    "wizard_robe": "Túnica de Mago", "ninja_robes": "Ropajes de Ninja",
+    "wizard_robe": "Túnica de Mago", "mage_robes": "Túnica de Mago",
+    "ninja_robes": "Ropajes de Ninja",
     "eshin_assassin_clothes": "Ropajes de Asesino Eshin",
     "spider_chitin_armour": "Armadura Kitinoza",
     "sea_dragon_cloak": "Capa de Dragón Marino", "helmet": "Casco",
     "bronze_helmet": "Casco",
 }
+
+EQUIPMENT_ITEM_TO_OPTION = {
+    **ITEM_TO_OPTION,
+    "lucky_charm": "Amuleto de la suerte",
+    "mad_mushrooms": "Hongos Sombrero Loco",
+    "mad_cap_mushrooms": "Hongos Pirakabezas",
+    "crimson_shade": "Sombra Carmesí",
+    "mandrake_root": "Raíz de Mandrágora",
+    "tears_of_shallaya": "Lágrimas de Shallaya",
+    "black_lotus": "Loto Negro",
+    "black_venom": "Veneno Negro",
+    "dark_venom": "Veneno Negro",
+    "reptile_venom": "Veneno de Reptil",
+    "manbane": "Matahombres",
+    "aconite": "Acónito",
+    "nightshade": "Sombra Nocturna",
+    "blood_root": "Raíz Sangrienta",
+    "bloodroot": "Raíz Sangrienta",
+    "devil_toxin": "Toxina del Diablo",
+    "devils_toxin": "Toxina del Diablo",
+    "spider_spittle": "Saliva de Araña",
+}
+
+SUPPORTED_EQUIPMENT_OPTIONS = frozenset({
+    *(armor for armor in ARMORS if armor not in {"Sin Armadura", "Ropajes de Ninja"}),
+    "Casco", "Amuleto de la suerte",
+    *(value for value in PREPARATIONS if value != "Ninguno"),
+    *(value for value in POISONS if value != "Sin veneno"),
+})
 
 MATERIAL_ITEMS = {
     "gromril_weapon": "Gromril", "ithilmar_weapon": "Ithilmar",
@@ -405,6 +438,117 @@ def find_profile(band_id: str, profile_id: str) -> CandidateProfile | None:
     return None
 
 
+def _expected_cost(value) -> float | None:
+    """Convierte costes con D6 a su valor esperado para comparaciones MOTTA."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).casefold().replace(" ", "").replace("×", "x")
+    if re.fullmatch(r"\d+(?:[.,]\d+)?", text):
+        return float(text.replace(",", "."))
+    total = 0.0
+    for term in text.split("+"):
+        dice = re.fullmatch(r"(?:(\d+))?d6(?:x(\d+))?", term)
+        if dice:
+            amount = int(dice.group(1) or 1)
+            multiplier = int(dice.group(2) or 1)
+            total += amount * 3.5 * multiplier
+            continue
+        try:
+            total += float(term)
+        except ValueError:
+            return None
+    return total
+
+
+def _profile_allows_equipment_item(item: dict, profile: dict) -> bool:
+    notes = str(item.get("notes", "")).casefold()
+    if "solo" not in notes or "solo durante" in notes:
+        return True
+    name = str(profile.get("name", "")).casefold()
+    profile_type = str(profile.get("type", "")).casefold()
+    rules = " ".join(
+        f"{rule.get('id', '')} {rule.get('name', '')}"
+        if isinstance(rule, dict) else str(rule)
+        for rule in profile.get("rules") or ()
+    ).casefold()
+    if "solo héroes" in notes:
+        return profile_type == "hero" or "corsario" in name
+    if "solo jefe" in notes:
+        return "jefe" in rules or "leader" in rules
+    allowed_names = {
+        "cazador silencioso": ("cazador silencioso",),
+        "rufianes y matones": ("rufián", "rufian", "matón", "maton"),
+        "médiko brujo": ("médiko brujo", "mediko brujo"),
+        "sacerdote eslizón": ("sacerdote eslizón", "sacerdote eslizon"),
+    }
+    for marker, names in allowed_names.items():
+        if marker in notes:
+            return any(value in name for value in names)
+    return True
+
+
+def _global_misc_equipment_for_profile(band: dict, profile: dict) -> set[str]:
+    """Equipo de mercado: los Héroes no están limitados a la lista de banda."""
+    if str(profile.get("type", "")).casefold() != "hero":
+        return set()
+    context = f"{band.get('id', '')} {band.get('name', '')}".casefold()
+    profile_name = str(profile.get("name", "")).casefold()
+    options = {
+        "Amuleto de la suerte", "Hongos Sombrero Loco", "Sombra Carmesí",
+        "Raíz de Mandrágora", "Lágrimas de Shallaya", "Loto Negro",
+        "Veneno Negro", "Veneno de Reptil", "Matahombres", "Acónito",
+        "Sombra Nocturna", "Raíz Sangrienta", "Toxina del Diablo",
+        "Saliva de Araña",
+    }
+    if "goblin" not in context and "goblin" not in profile_name:
+        options.discard("Hongos Pirakabezas")
+    if any(marker in context for marker in ("no-muertos", "no muertos", "poseídos", "poseidos")):
+        options.discard("Lágrimas de Shallaya")
+    if any(marker in context for marker in ("hermanas-de-sigmar", "hermanas de sigmar", "cazadores-de-brujas", "cazadores de brujas")):
+        options.discard("Loto Negro")
+        options.discard("Veneno Negro")
+        options.discard("Matahombres")
+    return options
+
+
+@lru_cache(maxsize=None)
+def equipment_options_for_profile(
+    band_id: str = "", profile_id: str = "",
+) -> tuple[str, ...]:
+    if not band_id or not profile_id:
+        return tuple(sorted(SUPPORTED_EQUIPMENT_OPTIONS, key=str.casefold))
+    for path in sorted(_knowledge_root().glob("*.yaml")):
+        with path.open("r", encoding="utf-8") as stream:
+            raw = yaml.safe_load(stream)
+        if str(raw.get("id", "")) != band_id:
+            continue
+        profile = next(
+            (row for row in raw.get("profiles") or () if str(row.get("id", "")) == profile_id),
+            None,
+        )
+        if profile is None:
+            return ()
+        lists = {
+            row["id"]: row.get("items") or ()
+            for row in raw.get("equipment_lists") or ()
+        }
+        allowed = set()
+        for list_id in profile.get("equipment_lists") or ():
+            for item in lists.get(list_id, ()):
+                if not _profile_allows_equipment_item(item, profile):
+                    continue
+                option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("item_id"))
+                if option in SUPPORTED_EQUIPMENT_OPTIONS:
+                    allowed.add(option)
+                allowed.update(
+                    value for value in COMPOSITE_ITEMS.get(item.get("item_id"), ())
+                    if value in SUPPORTED_EQUIPMENT_OPTIONS
+                )
+        allowed.update(_global_misc_equipment_for_profile(raw, profile))
+        return tuple(sorted(allowed, key=str.casefold))
+    return ()
+
+
 @lru_cache(maxsize=None)
 def equipment_costs_for_profile(band_id: str = "", profile_id: str = "") -> dict[str, float]:
     """Devuelve costes por opción; usa la lista de banda si hay un perfil."""
@@ -427,10 +571,12 @@ def equipment_costs_for_profile(band_id: str = "", profile_id: str = "") -> dict
             }
             for list_id in profile.get("equipment_lists") or ():
                 for item in lists.get(list_id, ()):
-                    option = ITEM_TO_OPTION.get(item.get("item_id"))
-                    value = item.get("cost")
-                    if option and isinstance(value, (int, float)):
-                        costs[option] = min(costs.get(option, float(value)), float(value))
+                    if not _profile_allows_equipment_item(item, profile):
+                        continue
+                    option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("item_id"))
+                    value = _expected_cost(item.get("cost"))
+                    if option and value is not None:
+                        costs[option] = min(costs.get(option, value), value)
             if "Yari (una mano)" in costs:
                 costs["Yari (dos manos)"] = costs["Yari (una mano)"]
             return {**equipment_costs_for_profile(), **costs}
@@ -440,25 +586,47 @@ def equipment_costs_for_profile(band_id: str = "", profile_id: str = "") -> dict
         with catalog.open("r", encoding="utf-8") as stream:
             raw = yaml.safe_load(stream)
         general = raw.get("general") or {}
-        rows = (*general.get("melee_weapons", ()), *general.get("armour", ()))
+        rows = (
+            *general.get("melee_weapons", ()), *general.get("armour", ()),
+            *general.get("drugs_and_poisons", ()),
+        )
         for item in rows:
-            option = ITEM_TO_OPTION.get(item.get("id"))
-            value = item.get("cost")
-            if option and isinstance(value, (int, float, str)):
-                try:
-                    costs[option] = float(value)
-                except ValueError:
-                    pass
+            option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("id"))
+            value = _expected_cost(item.get("cost"))
+            if option and value is not None:
+                costs[option] = value
+        for section in (raw.get("lustria") or {}).values():
+            if not isinstance(section, (list, tuple)):
+                continue
+            for item in section:
+                option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("id"))
+                value = _expected_cost(item.get("cost"))
+                if option and value is not None:
+                    costs.setdefault(option, value)
+    khemri_catalog = _knowledge_root().parent / "catalog" / "market-prices-khemri.yaml"
+    if khemri_catalog.is_file():
+        with khemri_catalog.open("r", encoding="utf-8") as stream:
+            raw_khemri = yaml.safe_load(stream)
+        for section in raw_khemri.values():
+            if not isinstance(section, (list, tuple)):
+                continue
+            for item in section:
+                if not isinstance(item, dict):
+                    continue
+                option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("id"))
+                value = _expected_cost(item.get("cost"))
+                if option and value is not None:
+                    costs.setdefault(option, value)
     costs.setdefault("Arma natural", 0.0)
     for path in sorted(_knowledge_root().glob("*.yaml")):
         with path.open("r", encoding="utf-8") as stream:
             band = yaml.safe_load(stream)
         for equipment_list in band.get("equipment_lists") or ():
             for item in equipment_list.get("items") or ():
-                option = ITEM_TO_OPTION.get(item.get("item_id"))
-                value = item.get("cost")
-                if option and option not in costs and isinstance(value, (int, float)):
-                    costs[option] = float(value)
+                option = EQUIPMENT_ITEM_TO_OPTION.get(item.get("item_id"))
+                value = _expected_cost(item.get("cost"))
+                if option and option not in costs and value is not None:
+                    costs[option] = value
     if "Yari (una mano)" in costs:
         costs["Yari (dos manos)"] = costs["Yari (una mano)"]
     return costs

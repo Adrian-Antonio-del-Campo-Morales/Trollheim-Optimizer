@@ -11,11 +11,11 @@ El programa calcula estimaciones estadísticas. No sustituye al reglamento, al
 La versión portable es la opción más sencilla para Windows: consiste en un
 único archivo y no necesita instalación, Python ni compilación.
 
-[Descargar Trollheim Optimizer Portable 5.0.1](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v5.0.1/Trollheim-Optimizer-Portable-5.0.1.exe)
+[Descargar Trollheim Optimizer Portable 6.0.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v6.0.0/Trollheim-Optimizer-Portable-6.0.0.exe)
 
 Para utilizarla:
 
-1. Descarga `Trollheim-Optimizer-Portable-5.0.1.exe`.
+1. Descarga `Trollheim-Optimizer-Portable-6.0.0.exe`.
 2. Guarda el archivo donde quieras, por ejemplo en el escritorio o en una
    memoria USB.
 3. Haz doble clic sobre él para abrir el simulador.
@@ -35,8 +35,8 @@ repositorio antes de ejecutarlo.
 - Guardado y carga de candidatos en libros Excel preparados para incorporar resultados.
 - Rivales aleatorios ponderados por perfil, dificultad y equipo legal.
 - Comparación de mejoras individuales y combinaciones de mejoras.
-- Comparación de armas, armaduras, objetos y consumibles.
-- Resultados óptimos de configuraciones de armas con coste e Índice MOTTA.
+- Comparación de armas, armaduras, objetos y consumibles con filtros legales por guerrero.
+- Resultados óptimos de armas y equipamiento con coste e Índice MOTTA.
 - Número de simulaciones configurable en cada análisis.
 
 El alcance, las decisiones de modelado y el trabajo pendiente se mantienen en
@@ -74,8 +74,8 @@ libro; la segunda opción activa automáticamente el rival configurable.
 
 ### Índice MOTTA
 
-La pestaña **Configuraciones de Armas** calcula la eficiencia económica de cada
-configuración mediante:
+Las pestañas **Armas** y **Equipamiento** calculan la eficiencia económica de
+cada configuración mediante:
 
 ```text
                       O_m × mejora
