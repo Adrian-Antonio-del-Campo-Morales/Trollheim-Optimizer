@@ -4,16 +4,17 @@ from trollheim_simulator.engine import (
     _armor_base_save,
     _armour_strength,
     _attack_strength,
-    _critical_effect,
+    _weapon_attacks_first,
     _combat_initiative,
     _extra_armour_penalty,
-    _frenzy_attack_count,
+    _house_rule_hit_penalty,
     _make_fighter,
     _nb_armour_save,
     _nb_to_hit,
     _nb_to_wound,
     _poison_for_attack,
     _parry_profile,
+    _phase_attack_plan,
     _phase_attack_count,
     _phase_weapon_for_attack,
     _weapon_for_attack,
@@ -41,9 +42,15 @@ from trollheim_simulator.rules import (
     WEAPON_SUN_GAUNTLET,
     WEAPON_DRAICH,
     WEAPON_DEATH_KNIFE,
+    WEAPON_LONG_HOOK,
+    WEAPON_TRIDENT,
+    WEAPON_SERPENT_WHIP,
+    WEAPON_WEEPING_BLADES,
     WEAPON_BALL_AND_CHAIN,
     WEAPONS_EXCLUSIVE,
     WEAPONS_GENERAL,
+    WEAPONS_ALL,
+    WEAPONS_MAIN,
     OFF_HAND_OPTIONS,
     OFFHAND_RESTRICTED_WEAPONS,
     WEAPON_CODES,
@@ -57,6 +64,8 @@ from trollheim_simulator.rules import (
     PREPARATION_MANDRAKE_ROOT,
     PREPARATION_MAD_CAP,
     PREPARATION_HEAD_SPLITTER,
+    SKILL_FENCER,
+    SKILL_SCIMITAR_FENCER,
 )
 
 
@@ -130,6 +139,44 @@ def test_offhand_codes_are_translated_to_weapon_codes():
     assert _weapon_for_attack(mace, BASE_FIGHTER["A"]) == WEAPON_MACE
 
 
+def test_house_rules_apply_the_expected_hit_penalties():
+    offhand_only = _make_fighter(
+        BASE_FIGHTER | {
+            "off_hand": "Daga",
+            "house_rule_offhand_penalty": True,
+        }
+    )
+    both_hands = _make_fighter(
+        BASE_FIGHTER | {
+            "off_hand": "Daga",
+            "house_rule_dual_penalty": True,
+        }
+    )
+    both_rules = _make_fighter(
+        BASE_FIGHTER | {
+            "off_hand": "Daga",
+            "house_rule_offhand_penalty": True,
+            "house_rule_dual_penalty": True,
+        }
+    )
+    assert _house_rule_hit_penalty(offhand_only, 0) == 0
+    assert _house_rule_hit_penalty(offhand_only, BASE_FIGHTER["A"]) == 1
+    assert _house_rule_hit_penalty(both_hands, 0) == 1
+    assert _house_rule_hit_penalty(both_hands, BASE_FIGHTER["A"]) == 1
+    assert _house_rule_hit_penalty(both_rules, BASE_FIGHTER["A"]) == 2
+
+
+def test_fencing_expertise_unifies_swords_and_scimitars():
+    sword_expert = _make_fighter(
+        BASE_FIGHTER | {"skills": ["Experto en Esgrima"]}
+    )
+    scimitar_expert = _make_fighter(
+        BASE_FIGHTER | {"skills": ["Experto en Esgrima (Cimitarra)"]}
+    )
+    assert sword_expert[9] & SKILL_FENCER
+    assert scimitar_expert[9] & SKILL_FENCER
+
+
 def test_new_weapon_profiles_are_encoded():
     assert _make_fighter(BASE_FIGHTER | {"main_weapon": "Mayal"})[6] == WEAPON_FLAIL
     assert _make_fighter(BASE_FIGHTER | {"main_weapon": "Estoque"})[6] == WEAPON_RAPIER
@@ -141,6 +188,8 @@ def test_weapon_catalog_is_split_without_duplicates():
     assert "Martillo Sigmarita" in WEAPONS_EXCLUSIVE
     assert set(WEAPONS_GENERAL).isdisjoint(WEAPONS_EXCLUSIVE)
     assert set(WEAPONS_GENERAL + WEAPONS_EXCLUSIVE) == set(WEAPON_CODES)
+    assert set(WEAPONS_ALL) == set(WEAPON_CODES)
+    assert set(WEAPONS_MAIN) == set(WEAPON_CODES) - {"Guantelete Solar"}
     assert set(OFF_HAND_OPTIONS) == set(OFFHAND_CODES)
     assert set(ARMORS) == set(ARMOR_CODES)
 
@@ -182,6 +231,9 @@ def test_revised_spear_and_two_handed_shield_rules():
     assert _make_fighter(
         BASE_FIGHTER | {"main_weapon": "Lanza", "off_hand": "Escudo"}
     )[8] == 6
+    assert _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Lanza", "off_hand": "Rodela"}
+    )[7] == OFF_BUCKLER
     assert two_handed[8] == 7
 
 
@@ -212,6 +264,13 @@ def test_corrected_exclusive_weapon_hand_rules():
     )
     assert witch_blade[7] == WEAPON_WITCH_BLADE
     assert sigmarite[7] == WEAPON_SWORD
+
+
+def test_beastmaster_whip_does_not_grant_global_attack_first():
+    whip = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Látigo de Señor de las Bestias"}
+    )
+    assert not _weapon_attacks_first(whip[6])
 
 
 def test_choppa_only_accepts_shield_or_spiked_gauntlet():
@@ -254,6 +313,11 @@ def test_new_manual_weapon_profiles_are_encoded():
     assert sun[7] == WEAPON_SUN_GAUNTLET
     assert _attack_strength(draich, WEAPON_DRAICH, False) == 5
     assert _attack_strength(death, WEAPON_DEATH_KNIFE, False) == 2
+    assert _attack_strength(
+        _make_fighter(BASE_FIGHTER | {"main_weapon": "Garfio Largo"}),
+        WEAPON_LONG_HOOK,
+        False,
+    ) == 2
 
 
 def test_additional_armour_profiles_use_their_melee_saves():
@@ -307,9 +371,39 @@ def test_double_blade_and_paired_parries_use_different_rules():
     two_swords = _make_fighter(
         BASE_FIGHTER | {"main_weapon": "Espada", "off_hand": "Espada"}
     )
+    weeping_blades = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Espadas Supurantes"}
+    )
     assert _parry_profile(double_blade) == (2, False)
     assert _parry_profile(eshin_claws) == (1, True)
-    assert _parry_profile(two_swords) == (1, True)
+    assert _parry_profile(two_swords) == (1, False)
+    assert _parry_profile(weeping_blades) == (1, False)
+    assert _extra_armour_penalty(eshin_claws, WEAPON_ESHIN_CLAWS) == 0
+
+
+def test_priority_and_whip_attacks_keep_their_own_weapon():
+    trident = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Espada", "off_hand": "Tridente"}
+    )
+    weapons, sources, kinds = _phase_attack_plan(trident, True)
+    assert weapons == [WEAPON_SWORD, WEAPON_TRIDENT]
+    assert sources == [0, BASE_FIGHTER["A"]]
+    assert kinds == ["core", "core"]
+
+    whip = _make_fighter(
+        BASE_FIGHTER | {"main_weapon": "Espada", "off_hand": "Látigo Ofidio"}
+    )
+    weapons, sources, kinds = _phase_attack_plan(whip, True, include_whip=True)
+    assert weapons == [WEAPON_SWORD, WEAPON_SERPENT_WHIP, WEAPON_SERPENT_WHIP]
+    assert sources == [0, BASE_FIGHTER["A"], BASE_FIGHTER["A"]]
+    assert kinds == ["core", "core", "whip"]
+    assert not _weapon_attacks_first(WEAPON_SERPENT_WHIP)
+
+
+def test_sun_gauntlet_is_normalized_to_the_secondary_hand():
+    fighter = _make_fighter(BASE_FIGHTER | {"main_weapon": "Guantelete Solar"})
+    assert fighter[6] == WEAPON_DAGGER
+    assert fighter[7] == WEAPON_SUN_GAUNTLET
 
 
 def test_heavy_weapon_bonus_expires_unless_tireless():
@@ -365,8 +459,8 @@ def test_mushrooms_double_base_attacks_but_not_the_second_weapon():
     )
     assert dual[14] == PREPARATION_MAD_CAP
     assert headsplitta[14] == PREPARATION_HEAD_SPLITTER
-    assert _frenzy_attack_count(dual, False) == 3
-    assert _frenzy_attack_count(dual, True) == 5
+    assert _phase_attack_count(dual, True, 0) == 3
+    assert _phase_attack_count(dual, True, dual[5]) == 5
 
 
 def test_black_venom_and_reptile_poison_have_different_penetration():
@@ -386,12 +480,3 @@ def test_weeping_blades_keep_their_permanent_black_lotus():
         | {"main_weapon": "Espadas Supurantes", "main_poison": "Veneno Negro"}
     )
     assert _poison_for_attack(blades, 0) == POISON_BLACK_LOTUS
-
-
-def test_critical_table():
-    assert _critical_effect(1) == (2, False, 0)
-    assert _critical_effect(2) == (2, False, 0)
-    assert _critical_effect(3) == (2, True, 0)
-    assert _critical_effect(4) == (2, True, 0)
-    assert _critical_effect(5) == (2, True, 2)
-    assert _critical_effect(6) == (2, True, 2)

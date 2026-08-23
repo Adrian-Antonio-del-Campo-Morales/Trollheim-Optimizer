@@ -1,0 +1,138 @@
+format_version: 1
+currency: coronas_de_oro
+source: {manual: khemri, printed_page: 114-115, section: Lista de Precios de Khemri}
+notes:
+  - Esta tabla sustituye a la tabla comercial básica durante una campaña en Khemri.
+  - Los objetos propios de una banda ausentes de la tabla usan su rareza descrita con +1. Por encima de Raro 12 solo se consiguen con Regatear o una habilidad similar y añaden 1D6 coronas al precio indicado.
+melee_weapons:
+  - {id: yambiya, name: Yambiya, cost: '2', availability: común}
+  - {id: dagger, name: Daga, cost: '2', availability: común}
+  - {id: club, name: Garrote, cost: '3', availability: común}
+  - {id: mace, name: Maza, cost: '3', availability: común}
+  - {id: hammer, name: Martillo, cost: '3', availability: raro_5}
+  - {id: staff, name: Báculo, cost: '3', availability: común}
+  - {id: axe, name: Hacha, cost: '5', availability: raro_5}
+  - {id: katar, name: Katar, cost: '5', availability: común}
+  - {id: scythe, name: Guadaña, cost: '5', availability: común}
+  - {id: sword, name: Espada, cost: '10', availability: común}
+  - {id: halberd, name: Alabarda, cost: '10', availability: común}
+  - {id: spear, name: Lanza, cost: '10', availability: común}
+  - {id: ankus, name: Ankus, cost: '13', availability: común}
+  - {id: great_weapon, name: Arma a dos manos, cost: '15', availability: común}
+  - {id: scimitar, name: Cimitarra, cost: '15', availability: común}
+  - {id: cutlass, name: Alfanje, cost: '15', availability: común}
+  - {id: flail, name: Mayal, cost: '15', availability: común}
+  - {id: morning_star, name: Mangual, cost: '15', availability: común}
+  - {id: dwarf_axe, name: Hacha Enana, cost: '15', availability: raro_8, restriction: Solo Enanos}
+  - {id: great_scimitar, name: Gran Cimitarra, cost: '20', availability: raro_7}
+  - {id: bagh_nakh, name: Bagh Nakh, cost: '30', availability: raro_7}
+  - {id: cavalry_lance, name: Lanza de Caballería, cost: '40', availability: raro_8}
+  - {id: serpent_staff, name: Báculo de Serpiente, cost: '30', availability: raro_9, restriction: Solo Sacerdote Funerario}
+  - {id: poisoned_daggers, name: Dagas Envenenadas, cost: '15', availability: raro_7, restriction: Solo Hobgoblins}
+  - {id: snake_whip, name: Látigo Ofidio, cost: '25', availability: raro_8, restriction: Solo Lahmias y Hermanas de Sangre}
+  - {id: unholy_transformation_sword, name: Espada de Transformación Impía, cost: '70', availability: raro_12}
+  - {id: whip, name: Látigo, cost: '15', availability: raro_7}
+  - {id: fighting_claws, name: Garras de Combate, cost: '35', availability: raro_8, restriction: Solo Skaven}
+  - {id: weeping_blades, name: Espadas Supurantes, cost: '50', availability: raro_10, restriction: Solo Skaven}
+  - {id: ithilmar_weapon, name: Arma de Ithilmar, cost: '3 x coste base', availability: raro_10}
+  - {id: gromril_weapon, name: Arma de Gromril, cost: '4 x coste base', availability: raro_12}
+  - {id: pike, name: Pica, cost: '12', availability: raro_8}
+missile_weapons:
+  - {id: sling, name: Honda, cost: '2', availability: común}
+  - {id: javelin, name: Jabalina, cost: '5', availability: común}
+  - {id: short_bow, name: Arco Corto, cost: '5', availability: común}
+  - {id: nehekhara_javelin, name: Jabalina Nehekhara, cost: '10', availability: común, restriction: Solo Funerarios}
+  - {id: bow, name: Arco, cost: '10', availability: común}
+  - {id: long_bow, name: Arco Largo, cost: '15', availability: raro_6}
+  - {id: throwing_knives, name: Cuchillos Arrojadizos, cost: '15', availability: común}
+  - {id: throwing_stars, name: Estrellas Arrojadizas, cost: '15', availability: raro_5}
+  - {id: pistol, name: Pistola, cost: '15', availability: raro_9}
+  - {id: pistol_brace, name: Ristra de Pistolas, cost: '30', availability: raro_9}
+  - {id: tufenk, name: Tufenk, cost: '15', availability: raro_6}
+  - {id: crossbow, name: Ballesta, cost: '25', availability: común}
+  - {id: blowpipe, name: Cerbatana, cost: '25', availability: raro_9}
+  - {id: blunderbuss, name: Trabuco, cost: '30', availability: raro_10}
+  - {id: duelling_pistol, name: Pistola de Duelo, cost: '30', availability: raro_11}
+  - {id: duelling_pistol_brace, name: Ristra de Pistolas de Duelo, cost: '60', availability: raro_11}
+  - {id: handgun, name: Arcabuz, cost: '35', availability: raro_8}
+  - {id: crossbow_pistol, name: Pistola Ballesta, cost: '35', availability: raro_9}
+  - {id: elf_bow, name: Arco Élfico, cost: '35+3D6', availability: raro_12}
+  - {id: warp_pistol, name: Pistola Bruja, cost: '35', availability: raro_11, restriction: Solo Skaven}
+  - {id: warp_pistol_brace, name: Ristra de Pistolas Bruja, cost: '70', availability: raro_11, restriction: Solo Skaven}
+  - {id: vanguard, name: Vanguardia, cost: '40', availability: raro_9}
+  - {id: repeating_crossbow, name: Ballesta de Repetición, cost: '40', availability: raro_8}
+  - {id: hunting_rifle, name: Rifle de Caza, cost: '200', availability: raro_12}
+armour:
+  - {id: buckler, name: Rodela, cost: '5', availability: común}
+  - {id: shield, name: Escudo, cost: '5', availability: común}
+  - {id: hardened_leather, name: Cuero Endurecido, cost: '5', availability: común}
+  - {id: helmet, name: Casco, cost: '10', availability: común}
+  - {id: mage_robes, name: Túnica de Mago, cost: '10', availability: raro_6, restriction: Solo lanzadores de hechizos}
+  - {id: light_armour, name: Armadura Ligera, cost: '20', availability: común}
+  - {id: heavy_armour, name: Armadura Pesada, cost: '50', availability: raro_6}
+  - {id: barding, name: Barda, cost: '80', availability: raro_8}
+  - {id: ithilmar_armour, name: Armadura de Ithilmar, cost: '90', availability: raro_10}
+  - {id: gromril_armour, name: Armadura de Gromril, cost: '150', availability: raro_12}
+miscellaneous:
+  - {id: garlic, name: Ajo, cost: '1', availability: común}
+  - {id: torch, name: Antorcha, cost: '2', availability: común}
+  - {id: net, name: Red, cost: '5', availability: común}
+  - {id: rope_and_hook, name: Cuerda y Garfio, cost: '5', availability: común}
+  - {id: water_skin, name: Bota de Agua, cost: '5', availability: común}
+  - {id: magic_gourd, name: Calabaza Mágica, cost: '10', availability: raro_7}
+  - {id: lantern, name: Lámpara, cost: '10', availability: común}
+  - {id: lucky_charm, name: Amuleto de Suerte, cost: '10', availability: raro_6}
+  - {id: standard, name: Estandarte, cost: '10', availability: raro_5}
+  - {id: black_lotus, name: Loto Negro, cost: '10+1D6', availability: raro_9, restriction: No disponible para Hermanas de Sigmar ni Cazadores de Brujas; las restricciones y rarezas raciales se aplican según su lista}
+  - {id: holy_water, name: Agua Bendita, cost: '10+3D6', availability: raro_7, restriction: No disponible para Poseídos ni No Muertos; común para Hermanas de Sigmar y Cazadores de Brujas}
+  - {id: tears_of_shallaya, name: Lágrimas de Shallaya, cost: '10+2D6', availability: raro_12, restriction: No disponible para No Muertos ni Poseídos}
+  - {id: snake_charmer_flute, name: Flauta de Encantador de Serpientes, cost: '10+1D6', availability: raro_9}
+  - {id: scorpion_ring, name: Anillo del Escorpión, cost: '10+1D6', availability: raro_11}
+  - {id: holy_relic, name: Reliquia Sagrada (Impía), cost: '15+3D6', availability: raro_8}
+  - {id: lockpicks, name: Ganzúas, cost: '15', availability: raro_8}
+  - {id: antidote_ring, name: Anillo Antídoto, cost: '20+2D6', availability: raro_10}
+  - {id: nehekhara_map, name: Mapa de Nehekhara, cost: '20+4D6', availability: raro_10}
+  - {id: healing_herbs, name: Hierbas Curativas, cost: '20+2D6', availability: raro_8}
+  - {id: familiar, name: Familiar, cost: '20+1D6', availability: raro_8, restriction: Solo lanzadores de hechizos}
+  - {id: icon_of_manann, name: Icono de Magnus, cost: '20+3D6', availability: raro_8, restriction: Solo bandas de Magos, note: La ficha de banda lo denomina Icono de Manann}
+  - {id: dispelling_scroll, name: Pergamino de Dispersión, cost: '25', availability: raro_9, restriction: Solo lanzadores de hechizos}
+  - {id: nomad_robes, name: Ropajes de Nómada, cost: '25', availability: raro_8}
+  - {id: hunting_arrows, name: Flechas de Caza, cost: '25+1D6', availability: raro_8}
+  - {id: mandrake_root, name: Raíz de Mandrágora, cost: '25+1D6', availability: raro_9}
+  - {id: witch_stone_pendant, name: Péndulo de Piedra Bruja, cost: '25+3D6', availability: raro_9}
+  - {id: plague_phial, name: Vial de Pestilencia, cost: '25+2D6', availability: raro_10, restriction: Solo Skaven}
+  - {id: mad_mushrooms, name: Hongos Sombrero Loco, cost: '30+3D6', availability: raro_9}
+  - {id: refractory_powder, name: Pólvora Refractaria, cost: '30', availability: raro_11}
+  - {id: dark_venom, name: Veneno Negro, cost: '30+2D6', availability: raro_8, restriction: No disponible para Hermanas de Sigmar ni Cazadores de Brujas; las rarezas raciales se aplican según su lista}
+  - {id: halfling_cookbook, name: Libro de Cocina Halfling, cost: '35+3D6', availability: raro_8}
+  - {id: crimson_shade, name: Sombra Carmesí, cost: '35+1D6', availability: raro_8}
+  - {id: cathay_silks, name: Ropas de Seda de Catai, cost: '50+1D6', availability: raro_8}
+  - {id: djinn_lamp, name: Lámpara de los Djinn, cost: '50+2D6', availability: raro_12}
+  - {id: monkey_paw, name: Pata de Mono, cost: '50+2D6', availability: raro_10}
+  - {id: magic_carpet, name: Alfombra Mágica, cost: '50+4D6', availability: raro_12}
+  - {id: bugmans_ale, name: Cerveza Bugman, cost: '50+4D6', availability: raro_11}
+  - {id: tarot_cards, name: Cartas del Tarot, cost: '50', availability: raro_8, restriction: No disponible para Cazadores de Brujas ni Hermanas de Sigmar}
+  - {id: elf_cloak, name: Capa Élfica, cost: '100+2D6x10', availability: raro_12}
+  - {id: holy_book, name: Libro Sagrado, cost: '100+1D6x10', availability: raro_9, restriction: Solo Cazadores de Brujas y Hermanas de Sigmar}
+  - {id: magic_tome, name: Tomo de Magia, cost: '200+1D6x25', availability: raro_12, restriction: No disponible para Cazadores de Brujas ni Hermanas de Sigmar}
+  - {id: elements_tome, name: Tomo de los Elementos, cost: '200+1D6x25', availability: raro_12, restriction: No disponible para Cazadores de Brujas ni Hermanas de Sigmar}
+  - {id: liber_mortis, name: Liber Mortis, cost: '220+2D6x25', availability: raro_14, restriction: No disponible para Cazadores de Brujas ni Hermanas de Sigmar}
+  - {id: closed_carriage, name: Carroza Opulenta, cost: '250', availability: raro_10}
+animals_and_vehicles:
+  - {id: war_mastiff, name: Mastín de Guerra, cost: '25+2D6', availability: raro_10, restriction: No disponible para Skaven}
+  - {id: mule, name: Mula, cost: '35', availability: raro_7}
+  - {id: horse, name: Caballo, cost: '40', availability: raro_8, restriction: Solo Humanos}
+  - {id: rowboat, name: Bote de Remos, cost: '40', availability: raro_7}
+  - {id: warhorse, name: Caballo de Guerra, cost: '80', availability: raro_11, restriction: Solo Humanos}
+  - {id: giant_wolf, name: Lobo Gigante, cost: '85', availability: raro_10, restriction: Solo Goblins y Hobgoblins}
+  - {id: elven_steed, name: Corcel Élfico, cost: '90', availability: raro_11, restriction: Solo Elfos}
+  - {id: chaos_steed, name: Corcel del Caos, cost: '90', availability: raro_12, restriction: Solo Poseídos y bandas del Caos}
+  - {id: war_boar, name: Jabalí de Guerra, cost: '90', availability: raro_12, restriction: Solo Orcos}
+  - {id: nightmare, name: Pesadilla, cost: '95', availability: raro_10, restriction: Solo No Muertos}
+  - {id: cold_one, name: Gélido, cost: '100', availability: raro_10, restriction: Solo Elfos Oscuros y Hombres Lagarto}
+  - {id: giant_spider, name: Araña Gigante, cost: '100', availability: raro_12, restriction: Solo Goblins Silvanos}
+  - {id: coach, name: Diligencia sin bestias de tiro, cost: '100', availability: raro_7}
+  - {id: river_boat, name: Barca de Río, cost: '100', availability: raro_8}
+  - {id: river_barge, name: Barcaza de Río, cost: '200', availability: raro_9}
+  - {id: bone_chariot, name: Carro de Hueso, cost: '200+10D6', availability: raro_7, restriction: Solo Funerarios}
+  - {id: camel, name: Camello, cost: '75', availability: raro_10, restriction: Solo Humanos}

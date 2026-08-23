@@ -149,7 +149,7 @@ SKILL_DESCRIPTIONS = {
     "A Fondo":
         "Suma +1 a la tirada de la tabla de Impactos Críticos.",
     "Experto en Esgrima":
-        "Permite repetir los ataques fallidos con espadas al cargar.",
+        "Permite repetir los ataques fallidos al cargar con espadas normales o cimitarras.",
     "Echarse a un Lado":
         "Otorga una tirada de salvación especial de 5+ no modificable.",
     "Golpe Poderoso":
@@ -204,6 +204,7 @@ WEAPONS_GENERAL = [
 ]
 
 WEAPONS_EXCLUSIVE = [
+    "Arma natural",
     "Vara Brasero",
     "Puños de Bronce",
     "Mazo de Guerra",
@@ -240,7 +241,12 @@ WEAPONS_EXCLUSIVE = [
     "Bola con Kadena",
 ]
 
-WEAPONS_MAIN = [*WEAPONS_GENERAL, *WEAPONS_EXCLUSIVE]
+MAIN_HAND_FORBIDDEN_WEAPONS = {"Guantelete Solar"}
+WEAPONS_ALL = [*WEAPONS_GENERAL, *WEAPONS_EXCLUSIVE]
+WEAPONS_MAIN = [
+    weapon for weapon in WEAPONS_ALL
+    if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS
+]
 
 TWO_HANDED_WEAPONS = {
     "Arma 2H", "Mayal", "Alabarda", "Guadaña", "Pica",
@@ -403,6 +409,7 @@ WEAPON_DEATH_KNIFE = 54
 WEAPON_PLAGUE_DAGGER = 55
 WEAPON_CENSER = 56
 WEAPON_BALL_AND_CHAIN = 57
+WEAPON_NATURAL = 58
 
 OFF_NONE = -1
 OFF_SHIELD = -2
@@ -486,6 +493,7 @@ POISON_CODES = {
 }
 
 WEAPON_CODES = {
+    "Arma natural": WEAPON_NATURAL,
     "Espada": WEAPON_SWORD,
     "Maza": WEAPON_MACE,
     "Daga": WEAPON_DAGGER,
@@ -585,3 +593,5 @@ SKILL_AXE_MASTER = 1 << 11
 SKILL_AXE_EXPERT = 1 << 12
 SKILL_SHIELD_STRIKE = 1 << 13
 SKILL_SWEEP = 1 << 14
+# Alias binario para configuraciones y extensiones anteriores a la unificación.
+SKILL_SCIMITAR_FENCER = SKILL_FENCER

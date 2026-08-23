@@ -10,17 +10,17 @@ echo  TROLLHEIM - BUILD ONE FILE EXE
 echo ================================================
 
 echo.
-echo [1/4] Checking Python...
+echo [1/5] Checking Python...
 python --version
 if errorlevel 1 goto :python_error
 
 echo.
-echo [2/4] Checking dependencies...
-python -c "import numpy; print('NumPy:', numpy.__version__)"
+echo [2/5] Checking dependencies...
+python -c "import numpy, openpyxl, yaml; print('NumPy:', numpy.__version__, '| openpyxl:', openpyxl.__version__)"
 if errorlevel 1 goto :dependency_error
 
 echo.
-echo [3/4] Checking PyInstaller and Tkinter...
+echo [3/5] Checking PyInstaller and Tkinter...
 python -m PyInstaller --version >nul 2>&1
 if errorlevel 1 goto :pyinstaller_error
 
@@ -36,8 +36,13 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Building single EXE...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name Trollheim --paths src src\trollheim_simulator\__main__.py
+echo [4/5] Building native combat kernel...
+call build_NATIVE_KERNEL.bat
+if errorlevel 1 goto :cython_error
+
+echo.
+echo [5/5] Building single EXE...
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name Trollheim --paths src --hidden-import trollheim_simulator._combat_fast --add-data "sources\knowledge;sources\knowledge" src\trollheim_simulator\__main__.py
 if errorlevel 1 goto :build_error
 
 echo.
@@ -56,7 +61,7 @@ echo ERROR: Python no esta disponible en PATH.
 goto :failed
 
 :dependency_error
-echo ERROR: Falta NumPy.
+echo ERROR: Falta alguna dependencia de ejecucion.
 echo Ejecuta: python -m pip install -r requirements.txt
 goto :failed
 
@@ -68,6 +73,11 @@ goto :failed
 :tkinter_error
 echo ERROR: La instalacion de Tkinter/Tcl no funciona.
 echo Repara la instalacion de Python incluyendo Tcl/Tk y vuelve a intentarlo.
+goto :failed
+
+:cython_error
+echo ERROR compilando el kernel nativo de combate.
+echo Instala Visual C++ Build Tools y las dependencias de requirements-dev.txt.
 goto :failed
 
 :build_error

@@ -10,7 +10,7 @@ import tkinter as tk
 import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import combinations_with_replacement
-from tkinter import font as tkfont, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import numpy as np
 
@@ -22,7 +22,20 @@ from .engine import (
     run_single_task_optimized,
 )
 from .enemies import DIFFICULTIES, ENEMY_PROFILES, profiles_for_difficulties
+from .candidate_catalog import (
+    CATEGORY_LABELS,
+    CATEGORY_ORDER,
+    GENERAL_SKILL_CATEGORIES,
+    GENERAL_SKILL_DESCRIPTIONS,
+    armour_descriptions,
+    find_profile,
+    load_bands,
+    usable_main_weapons,
+    usable_offhand_options,
+    weapon_descriptions,
+)
 from .rules import *
+from .workbooks import CandidateWorkbookError, load_candidate_workbook, save_candidate_workbook
 
 
 COMBAT_MODES = (
@@ -37,6 +50,7 @@ DELTA_NEUTRAL = "#666666"
 DEFAULT_COMBO_SIMULATIONS = 10_000
 PROGRESS_POLL_MS = 100
 PROGRESS_ANIMATION_MS = 60
+TASK_GROUP_SIZE = 2
 
 
 def _configure_simulation_worker():
@@ -81,7 +95,8 @@ class ToolTip:
         self,
         event=None,
     ):
-        if self.tip_window or not self.text:
+        text = self.text() if callable(self.text) else self.text
+        if self.tip_window or not text:
             return
 
         x, y, _cx, cy = (
@@ -114,12 +129,13 @@ class ToolTip:
 
         label = tk.Label(
             tw,
-            text=self.text,
+            text=text,
             justify=tk.LEFT,
             background="#ffffe0",
             relief=tk.SOLID,
             borderwidth=1,
             font=("tahoma", 8, "normal"),
+            wraplength=420,
         )
 
         label.pack(
@@ -145,6 +161,9 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self,
         parent,
         title,
+        show_house_rules=False,
+        skill_descriptions=None,
+        skill_categories=None,
     ):
         super().__init__(
             parent,
@@ -160,9 +179,13 @@ class WarriorConfigFrame(ttk.LabelFrame):
             "A": 1,
         }
 
+        self.skill_descriptions = skill_descriptions or SKILL_DESCRIPTIONS
+        self.skill_categories = skill_categories or {
+            skill: "combat" for skill in self.skill_descriptions
+        }
         self.skills = {
             s: tk.BooleanVar()
-            for s in SKILLS
+            for s in self.skill_descriptions
         }
 
         self.eq_main_general = tk.StringVar(value=WEAPONS_GENERAL[0])
@@ -181,10 +204,16 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.eq_armor = tk.StringVar(
             value=ARMORS[0]
         )
+        self.show_house_rules = show_house_rules
+        self.house_rule_offhand_penalty = tk.BooleanVar(value=False)
+        self.house_rule_dual_penalty = tk.BooleanVar(value=False)
+        self.undead_or_possessed = tk.BooleanVar(value=False)
 
         self.attr_entries = {}
         self.attr_buttons = []
         self.interactable_widgets = []
+        self.skill_widgets = {}
+        self.option_filter = None
 
         self._build_gui()
 
@@ -193,7 +222,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
         ttk.Label(
             self,
             text="Atributos Básicos",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 12, "bold"),
         ).pack(
             pady=(5, 2)
         )
@@ -213,6 +242,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
             ttk.Label(
                 attr_frame,
                 text=f"{attr}:",
+                font=("Arial", 11, "bold"),
             ).grid(
                 row=0,
                 column=col,
@@ -222,7 +252,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
             btn_sub = ttk.Button(
                 attr_frame,
                 text="-",
-                width=2,
+                width=3,
                 command=lambda a=attr:
                     self.change_stat(a, -1),
             )
@@ -235,8 +265,9 @@ class WarriorConfigFrame(ttk.LabelFrame):
 
             ent = ttk.Entry(
                 attr_frame,
-                width=3,
+                width=5,
                 justify="center",
+                font=("Arial", 11, "bold"),
             )
 
             ent.insert(
@@ -253,7 +284,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
             btn_add = ttk.Button(
                 attr_frame,
                 text="+",
-                width=2,
+                width=3,
                 command=lambda a=attr:
                     self.change_stat(a, 1),
             )
@@ -319,15 +350,22 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
         self.cb_main.grid(row=0, column=1, sticky="ew", padx=(2, 7), pady=2)
         self.cb_main.bind("<<ComboboxSelected>>", lambda event: self._select_weapon("main", "general"))
+        ToolTip(self.cb_main, lambda: weapon_descriptions().get(self.eq_main_general.get(), ""))
         ttk.Label(main_hand, text="Especiales:").grid(row=1, column=0, sticky="e", padx=(7, 2), pady=2)
         self.cb_main_exclusive = ttk.Combobox(
             main_hand, textvariable=self.eq_main_exclusive,
-            values=("Ninguna", *WEAPONS_EXCLUSIVE), state="readonly", width=20,
+            values=(
+                "Ninguna",
+                *(weapon for weapon in WEAPONS_EXCLUSIVE
+                  if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS),
+            ),
+            state="readonly", width=20,
         )
         self.cb_main_exclusive.grid(row=1, column=1, sticky="ew", padx=(2, 7), pady=2)
         self.cb_main_exclusive.bind(
             "<<ComboboxSelected>>", lambda event: self._select_weapon("main", "exclusive")
         )
+        ToolTip(self.cb_main_exclusive, lambda: weapon_descriptions().get(self.eq_main_exclusive.get(), ""))
         ttk.Label(main_hand, text="Material:").grid(row=2, column=0, sticky="e", padx=(7, 2), pady=2)
         self.cb_main_material = ttk.Combobox(
             main_hand, textvariable=self.eq_main_material, values=WEAPON_MATERIALS,
@@ -345,6 +383,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
         self.cb_offhand.grid(row=0, column=1, sticky="ew", padx=(2, 7), pady=2)
         self.cb_offhand.bind("<<ComboboxSelected>>", lambda event: self._select_weapon("off", "general"))
+        ToolTip(self.cb_offhand, lambda: weapon_descriptions().get(self.eq_off_general.get(), ""))
         ttk.Label(off_hand, text="Especiales:").grid(row=1, column=0, sticky="e", padx=(7, 2), pady=2)
         self.cb_off_exclusive = ttk.Combobox(
             off_hand, textvariable=self.eq_off_exclusive, values=OFFHAND_EXCLUSIVE,
@@ -354,6 +393,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.cb_off_exclusive.bind(
             "<<ComboboxSelected>>", lambda event: self._select_weapon("off", "exclusive")
         )
+        ToolTip(self.cb_off_exclusive, lambda: weapon_descriptions().get(self.eq_off_exclusive.get(), ""))
         ttk.Label(off_hand, text="Material:").grid(row=2, column=0, sticky="e", padx=(7, 2), pady=2)
         self.cb_off_material = ttk.Combobox(
             off_hand, textvariable=self.eq_off_material, values=WEAPON_MATERIALS,
@@ -383,6 +423,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
         self.cb_armor.pack(side="left", fill="x", expand=True)
         self.cb_armor.bind("<<ComboboxSelected>>", self.on_equipment_change)
+        ToolTip(self.cb_armor, lambda: armour_descriptions().get(self.eq_armor.get(), ""))
 
         self.chk_helmet = ttk.Checkbutton(
             defense,
@@ -404,6 +445,39 @@ class WarriorConfigFrame(ttk.LabelFrame):
             ]
         )
 
+        if self.show_house_rules:
+            house_rules = ttk.LabelFrame(self, text=" Reglas de la casa ")
+            house_rules.pack(fill="x", padx=12, pady=(0, 5))
+            black_rule = tk.Checkbutton(
+                house_rules,
+                text=(
+                    "regla de la casa para hacer que llevar dos armas no este tan roto "
+                    "y sea siempre la mejor alternativa sin importar lo ways que esten "
+                    "tus armas o tus reglas ni nada en todo el juego"
+                ),
+                variable=self.house_rule_offhand_penalty,
+                anchor="w",
+                justify="left",
+                wraplength=720,
+            )
+            black_rule.pack(fill="x", padx=6, pady=(3, 1))
+            red_rule = tk.Checkbutton(
+                house_rules,
+                text=(
+                    "regla de la casa para hacer que llevar dos armas no este tan roto "
+                    "y sea siempre la mejor alternativa sin importar lo ways que esten "
+                    "tus armas o tus reglas ni nada en todo el juego"
+                ),
+                variable=self.house_rule_dual_penalty,
+                foreground="#c62828",
+                activeforeground="#c62828",
+                anchor="w",
+                justify="left",
+                wraplength=720,
+            )
+            red_rule.pack(fill="x", padx=6, pady=(1, 3))
+            self.interactable_widgets.extend((black_rule, red_rule))
+
         ttk.Separator(
             self,
             orient="horizontal",
@@ -421,31 +495,39 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
 
         skill_frame = ttk.Frame(self)
+        self.skill_frame = skill_frame
 
         skill_frame.pack(
             pady=2
         )
 
-        skill_columns = 4
-        for i, sk in enumerate(SKILLS):
+        self.skill_column_frames = {}
+        for column, category in enumerate(CATEGORY_ORDER):
+            skill_frame.columnconfigure(column, weight=1, uniform="skill_categories")
+            category_frame = ttk.LabelFrame(
+                skill_frame, text=f" {CATEGORY_LABELS[category]} "
+            )
+            category_frame.grid(row=0, column=column, sticky="nsew", padx=1)
+            self.skill_column_frames[category] = category_frame
+
+        for sk in self.skills:
+            category = self.skill_categories.get(sk, "special")
 
             chk = ttk.Checkbutton(
-                skill_frame,
+                self.skill_column_frames[category],
                 text=sk,
                 variable=self.skills[sk],
             )
 
-            chk.grid(
-                row=i // skill_columns,
-                column=i % skill_columns,
-                sticky="w",
-                padx=7,
+            chk.pack(
+                anchor="w",
+                padx=3,
                 pady=1,
             )
 
             ToolTip(
                 chk,
-                SKILL_DESCRIPTIONS.get(
+                self.skill_descriptions.get(
                     sk,
                     "Sin descripción",
                 ),
@@ -454,6 +536,81 @@ class WarriorConfigFrame(ttk.LabelFrame):
             self.interactable_widgets.append(
                 chk
             )
+            self.skill_widgets[sk] = chk
+
+        traits = ttk.Frame(self)
+        traits.pack(pady=(2, 4))
+        unholy = ttk.Checkbutton(
+            traits,
+            text="No muerto o Poseído",
+            variable=self.undead_or_possessed,
+        )
+        unholy.pack(side="left", padx=7)
+        ToolTip(
+            unholy,
+            "Activa reglas condicionales como el +1 para herir del Martillo Sigmarita.",
+        )
+        self.interactable_widgets.append(unholy)
+
+    def set_option_filter(self, profile=None, extra_skills=()):
+        """Limita los controles a las opciones modeladas y legales del perfil."""
+        self.option_filter = profile
+        if profile is None:
+            main_allowed = tuple(WEAPONS_MAIN)
+            off_allowed = tuple(OFF_HAND_OPTIONS)
+            armor_allowed = tuple(ARMORS)
+            material_allowed = tuple(WEAPON_MATERIALS)
+            skill_allowed = set(GENERAL_SKILL_DESCRIPTIONS) | set(extra_skills)
+            helmet_allowed = True
+        else:
+            main_allowed = usable_main_weapons(profile)
+            off_allowed = usable_offhand_options(profile)
+            armor_allowed = ("Sin Armadura", *profile.armors)
+            material_allowed = profile.materials
+            skill_allowed = set(profile.skills)
+            helmet_allowed = profile.helmet_allowed
+
+        self._allowed_main = set(main_allowed)
+        self._allowed_off = set(off_allowed)
+        self._allowed_armor = set(armor_allowed)
+        self._allowed_materials = set(material_allowed)
+        self._helmet_allowed = helmet_allowed
+        self.cb_main.config(values=("Ninguna", *(w for w in WEAPONS_GENERAL if w in self._allowed_main)))
+        self.cb_main_exclusive.config(values=(
+            "Ninguna", *(w for w in WEAPONS_EXCLUSIVE if w in self._allowed_main)
+        ))
+        self.cb_offhand.config(values=tuple(w for w in OFFHAND_GENERAL if w in self._allowed_off))
+        self.cb_off_exclusive.config(values=tuple(w for w in OFFHAND_EXCLUSIVE if w in self._allowed_off))
+        self.cb_armor.config(values=tuple(a for a in ARMORS if a in self._allowed_armor))
+        self.cb_main_material.config(values=tuple(m for m in WEAPON_MATERIALS if m in self._allowed_materials))
+        self.cb_off_material.config(values=tuple(m for m in WEAPON_MATERIALS if m in self._allowed_materials))
+
+        visible = [skill for skill in self.skills if skill in skill_allowed]
+        for widget in self.skill_widgets.values():
+            widget.pack_forget()
+        for skill in visible:
+            self.skill_widgets[skill].pack(anchor="w", padx=3, pady=1)
+        for skill, variable in self.skills.items():
+            if skill not in skill_allowed:
+                variable.set(False)
+
+        if self._selected_main_weapon() not in self._allowed_main:
+            replacement = next(iter(main_allowed), "Daga")
+            self.eq_main_general.set(replacement if replacement in WEAPONS_GENERAL else "Ninguna")
+            self.eq_main_exclusive.set(replacement if replacement in WEAPONS_EXCLUSIVE else "Ninguna")
+        if self._selected_offhand() not in self._allowed_off:
+            self.eq_off_general.set("Ninguna")
+            self.eq_off_exclusive.set("Ninguna")
+        if self.eq_armor.get() not in self._allowed_armor:
+            self.eq_armor.set("Sin Armadura")
+        if self.eq_main_material.get() not in self._allowed_materials:
+            self.eq_main_material.set("Sin material")
+        if self.eq_off_material.get() not in self._allowed_materials:
+            self.eq_off_material.set("Sin material")
+        if not helmet_allowed:
+            self.eq_has_helmet.set(False)
+        self.chk_helmet.config(state="normal" if helmet_allowed else "disabled")
+        self.on_equipment_change()
 
     def change_stat(
         self,
@@ -545,24 +702,28 @@ class WarriorConfigFrame(ttk.LabelFrame):
 
     def on_equipment_change(self, event=None):
         main_weapon = self._selected_main_weapon()
-        off_disabled = main_weapon in TWO_HANDED_WEAPONS or main_weapon in PAIRED_WEAPONS
+        off_disabled = (
+            main_weapon in TWO_HANDED_WEAPONS
+            or main_weapon in PAIRED_WEAPONS
+            or main_weapon == "Arma natural"
+        )
 
         if main_weapon == "Lanza":
-            self.cb_offhand.config(values=("Ninguna", "Escudo", "Rodela"))
+            self.cb_offhand.config(values=tuple(v for v in ("Ninguna", "Escudo", "Rodela") if v in self._allowed_off))
             self.cb_off_exclusive.config(state="disabled")
             self.eq_off_exclusive.set("Ninguna")
             if self.eq_off_general.get() not in ("Ninguna", "Escudo", "Rodela"):
                 self.eq_off_general.set("Ninguna")
         elif main_weapon == "Mangual":
-            self.cb_offhand.config(values=("Ninguna", "Escudo"))
+            self.cb_offhand.config(values=tuple(v for v in ("Ninguna", "Escudo") if v in self._allowed_off))
             self.cb_off_exclusive.config(state="disabled")
             self.eq_off_exclusive.set("Ninguna")
             if self.eq_off_general.get() not in ("Ninguna", "Escudo"):
                 self.eq_off_general.set("Ninguna")
         elif main_weapon in ("Rebanadora", "Pinchagarrapatos"):
-            self.cb_offhand.config(values=("Ninguna", "Escudo"))
+            self.cb_offhand.config(values=tuple(v for v in ("Ninguna", "Escudo") if v in self._allowed_off))
             self.cb_off_exclusive.config(
-                values=("Ninguna", "Guantelete con Pincho"),
+                values=tuple(v for v in ("Ninguna", "Guantelete con Pincho") if v in self._allowed_off),
                 state="readonly",
             )
             if self.eq_off_general.get() not in ("Ninguna", "Escudo"):
@@ -572,8 +733,8 @@ class WarriorConfigFrame(ttk.LabelFrame):
             ):
                 self.eq_off_exclusive.set("Ninguna")
         else:
-            self.cb_offhand.config(values=OFFHAND_GENERAL)
-            self.cb_off_exclusive.config(values=OFFHAND_EXCLUSIVE)
+            self.cb_offhand.config(values=tuple(v for v in OFFHAND_GENERAL if v in self._allowed_off))
+            self.cb_off_exclusive.config(values=tuple(v for v in OFFHAND_EXCLUSIVE if v in self._allowed_off))
             self.cb_off_exclusive.config(state="readonly")
 
         armor = self.eq_armor.get()
@@ -600,6 +761,8 @@ class WarriorConfigFrame(ttk.LabelFrame):
         else:
             self.cb_offhand.config(state="readonly")
             self.cb_off_material.config(state="readonly")
+        if not self._helmet_allowed:
+            self.chk_helmet.config(state="disabled")
 
     def get_config_dict(self):
 
@@ -633,6 +796,9 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
 
         result["has_luck_amulet"] = False
+        result["house_rule_offhand_penalty"] = self.house_rule_offhand_penalty.get()
+        result["house_rule_dual_penalty"] = self.house_rule_dual_penalty.get()
+        result["undead_or_possessed"] = self.undead_or_possessed.get()
 
         result["armor"] = (
             self.eq_armor.get()
@@ -646,17 +812,25 @@ class WarriorConfigFrame(ttk.LabelFrame):
             entry.insert(0, str(config.get(attribute, self.stats[attribute])))
 
         selected_skills = set(config.get("skills", ()))
+        if "Experto en Esgrima (Cimitarra)" in selected_skills:
+            selected_skills.discard("Experto en Esgrima (Cimitarra)")
+            selected_skills.add("Experto en Esgrima")
         for skill, variable in self.skills.items():
             variable.set(skill in selected_skills)
 
         main_weapon = config.get("main_weapon", WEAPONS_GENERAL[0])
+        off_hand = config.get("off_hand", "Ninguna")
+        if main_weapon in MAIN_HAND_FORBIDDEN_WEAPONS:
+            # Compatibilidad con configuraciones antiguas que guardaban el
+            # Guantelete Solar en la mano equivocada.
+            off_hand = main_weapon
+            main_weapon = "Daga"
         self.eq_main_general.set(
             "Ninguna" if main_weapon in WEAPONS_EXCLUSIVE else main_weapon
         )
         self.eq_main_exclusive.set(
             main_weapon if main_weapon in WEAPONS_EXCLUSIVE else "Ninguna"
         )
-        off_hand = config.get("off_hand", "Ninguna")
         self.eq_off_general.set(
             "Ninguna" if off_hand in OFFHAND_EXCLUSIVE else off_hand
         )
@@ -667,7 +841,154 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.eq_off_material.set(config.get("offhand_material", "Normal"))
         self.eq_armor.set(config.get("armor", ARMORS[0]))
         self.eq_has_helmet.set(config.get("has_helmet", False))
+        self.house_rule_offhand_penalty.set(
+            config.get("house_rule_offhand_penalty", False)
+        )
+        self.house_rule_dual_penalty.set(config.get("house_rule_dual_penalty", False))
+        self.undead_or_possessed.set(config.get("undead_or_possessed", False))
         self.on_equipment_change()
+
+
+class EnemyProfileEditor(ttk.Frame):
+    """Editor completo de un rival manual, materializado solo cuando se ve."""
+
+    def __init__(self, parent, bands, initial=None, on_name_change=None):
+        super().__init__(parent)
+        self.bands = bands
+        self.band_by_name = {band.name: band for band in bands}
+        self.on_name_change = on_name_change
+        self.name = tk.StringVar(value="Enemigo")
+        self.band_id = tk.StringVar()
+        self.profile_id = tk.StringVar()
+        self.status = tk.StringVar(value="Selección libre")
+
+        selector = ttk.Frame(self)
+        selector.pack(fill="x", padx=8, pady=(5, 2))
+        for column in (1, 3, 5):
+            selector.columnconfigure(column, weight=1)
+        ttk.Label(selector, text="Nombre:").grid(row=0, column=0, padx=(0, 3))
+        name_entry = ttk.Entry(selector, textvariable=self.name)
+        name_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(selector, text="Banda:").grid(row=0, column=2, padx=(0, 3))
+        self.band_combo = ttk.Combobox(
+            selector, state="readonly",
+            values=("Selección libre", *(band.name for band in bands)),
+        )
+        self.band_combo.grid(row=0, column=3, sticky="ew", padx=(0, 8))
+        ttk.Label(selector, text="Guerrero:").grid(row=0, column=4, padx=(0, 3))
+        self.profile_combo = ttk.Combobox(selector, state="disabled")
+        self.profile_combo.grid(row=0, column=5, sticky="ew")
+        ttk.Label(selector, textvariable=self.status, font=("Arial", 8, "italic")).grid(
+            row=1, column=0, columnspan=6, sticky="w", pady=(3, 0)
+        )
+        self.band_combo.bind("<<ComboboxSelected>>", self._band_changed)
+        self.profile_combo.bind("<<ComboboxSelected>>", self._profile_changed)
+        self.name.trace_add("write", self._name_changed)
+
+        descriptions = dict(GENERAL_SKILL_DESCRIPTIONS)
+        categories = dict(GENERAL_SKILL_CATEGORIES)
+        for band in bands:
+            descriptions.update((skill.name, skill.description) for skill in band.skills)
+            for skill in band.skills:
+                categories.setdefault(skill.name, "special")
+        self.config = WarriorConfigFrame(
+            self, "Configuración del enemigo", skill_descriptions=descriptions,
+            skill_categories=categories,
+        )
+        self.config.pack(fill="both", expand=True, padx=5, pady=(2, 5))
+        self.config.set_option_filter(None)
+        self.band_combo.set("Selección libre")
+        if initial:
+            self.load_config(initial)
+
+    def _name_changed(self, *_args):
+        if self.on_name_change:
+            self.on_name_change(self.name.get().strip() or "Enemigo")
+
+    def _band_changed(self, _event=None):
+        band = self.band_by_name.get(self.band_combo.get())
+        self.profile_id.set("")
+        if band is None:
+            self.band_id.set("")
+            self.profile_combo.set("")
+            self.profile_combo.config(values=(), state="disabled")
+            self.config.set_option_filter(None)
+            self.status.set("Selección libre: todas las opciones comunes.")
+            return
+        self.band_id.set(band.band_id)
+        self.profile_combo.config(values=tuple(p.name for p in band.profiles), state="readonly")
+        self.profile_combo.set("Selecciona un guerrero")
+        self.config.set_option_filter(None, extra_skills=(s.name for s in band.skills))
+        self.status.set(f"{len(band.profiles)} perfiles disponibles.")
+
+    def _profile_changed(self, _event=None):
+        band = next((band for band in self.bands if band.band_id == self.band_id.get()), None)
+        if not band:
+            return
+        profile = next((p for p in band.profiles if p.name == self.profile_combo.get()), None)
+        if not profile:
+            return
+        self.profile_id.set(profile.profile_id)
+        self.name.set(profile.name)
+        default_weapon = next(iter(usable_main_weapons(profile)), "Daga")
+        self.config.load_config({
+            **profile.stats, "skills": [], "main_weapon": default_weapon,
+            "off_hand": "Ninguna", "armor": "Sin Armadura",
+        })
+        self.config.set_option_filter(profile)
+        self.status.set(f"Perfil canónico: {profile.band_name} · {profile.profile_type}.")
+
+    def get_config_dict(self):
+        result = self.config.get_config_dict()
+        profile = find_profile(self.band_id.get(), self.profile_id.get())
+        result.update({
+            "enemy_name": self.name.get().strip() or "Enemigo",
+            "enemy_band_id": self.band_id.get(),
+            "enemy_profile_id": self.profile_id.get(),
+            "allowed_upgrade_skills": (
+                [skill for skill in profile.skills if skill in SKILLS]
+                if profile else list(SKILLS)
+            ),
+        })
+        return result
+
+    def load_config(self, data):
+        self.name.set(data.get("enemy_name", "Enemigo"))
+        band_id = data.get("enemy_band_id", "")
+        profile_id = data.get("enemy_profile_id", "")
+        profile = find_profile(band_id, profile_id)
+        if profile:
+            band = next(b for b in self.bands if b.band_id == band_id)
+            self.band_id.set(band_id)
+            self.profile_id.set(profile_id)
+            self.band_combo.set(band.name)
+            self.profile_combo.config(values=tuple(p.name for p in band.profiles), state="readonly")
+            self.profile_combo.set(profile.name)
+            self.config.load_config(data)
+            self.config.set_option_filter(profile)
+            self.status.set(f"Perfil cargado: {band.name} · {profile.name}.")
+        else:
+            self.band_id.set("")
+            self.profile_id.set("")
+            self.band_combo.set("Selección libre")
+            self.profile_combo.config(values=(), state="disabled")
+            self.config.load_config(data)
+            self.config.set_option_filter(None)
+
+    def set_enabled(self, enabled):
+        self.config.set_enabled(enabled)
+        for child in self.winfo_children()[0].winfo_children():
+            try:
+                if child is self.band_combo:
+                    child.config(state="readonly" if enabled else "disabled")
+                elif child is self.profile_combo:
+                    child.config(
+                        state="readonly" if enabled and self.band_id.get() else "disabled"
+                    )
+                else:
+                    child.config(state="normal" if enabled else "disabled")
+            except tk.TclError:
+                pass
 
 
 # Ventana principal
@@ -682,9 +1003,19 @@ class TrollheimApp(tk.Tk):
             "Trollheim Combat Simulator - Optimizado"
         )
 
-        self.notebook = ttk.Notebook(
-            self
+        book_toolbar = ttk.Frame(self, padding=(10, 6))
+        book_toolbar.pack(fill="x")
+        ttk.Label(book_toolbar, text="Libro de simulación", font=("Arial", 9, "bold")).pack(
+            side="left"
         )
+        ttk.Button(book_toolbar, text="Guardar libro…", command=self._save_candidate).pack(
+            side="right"
+        )
+        ttk.Button(book_toolbar, text="Cargar libro…", command=self._load_candidate).pack(
+            side="right", padx=(0, 6)
+        )
+
+        self.notebook = ttk.Notebook(self)
 
         self.notebook.pack(
             fill="both",
@@ -727,10 +1058,20 @@ class TrollheimApp(tk.Tk):
         }
         self.weapon_item_vars = {
             weapon: tk.BooleanVar(value=weapon in common_weapons)
-            for weapon in WEAPONS_MAIN
+            for weapon in WEAPONS_ALL
         }
+        self.candidate_name = tk.StringVar(value="Candidato")
+        self.candidate_band_id = tk.StringVar(value="")
+        self.candidate_profile_id = tk.StringVar(value="")
+        self.candidate_catalog_status = tk.StringVar(value="Selección libre: todas las opciones del simulador.")
+        self.candidate_workbook_path = None
+        self._candidate_bands = load_bands()
+        self._band_by_name = {band.name: band for band in self._candidate_bands}
         self._warrior_snapshots = {}
+        self._enemy_profiles = []
+        self._active_enemy_editor_index = None
         self._active_tab_key = "candidate"
+        self._tab_transitioning = False
 
         tab_specs = (
             ("candidate", "Candidato", self.setup_tab_candidate),
@@ -769,6 +1110,8 @@ class TrollheimApp(tk.Tk):
                 return
 
     def _on_tab_changed(self, _event=None):
+        if self._tab_transitioning:
+            return
         selected = self.notebook.select()
         tab_data = self._lazy_tabs.get(selected)
         if not tab_data:
@@ -779,9 +1122,13 @@ class TrollheimApp(tk.Tk):
         if getattr(self, "_simulation_running", False):
             self.notebook.select(self._tab_id_for(self._active_tab_key))
             return
-        self._unload_tab(self._active_tab_key)
-        self._build_lazy_tab(requested_key)
-        self._active_tab_key = requested_key
+        self._tab_transitioning = True
+        try:
+            self._unload_tab(self._active_tab_key)
+            self._build_lazy_tab(requested_key)
+            self._active_tab_key = requested_key
+        finally:
+            self._tab_transitioning = False
 
     def _tab_id_for(self, requested_key):
         for tab_id, (key, _tab, _builder) in self._lazy_tabs.items():
@@ -790,41 +1137,265 @@ class TrollheimApp(tk.Tk):
         raise KeyError(requested_key)
 
     def _unload_tab(self, key):
+        if key not in self._built_tabs:
+            return
         if key == "candidate" and hasattr(self, "candidate_config"):
-            self._warrior_snapshots[key] = self.candidate_config.get_config_dict()
-        elif key == "enemy" and hasattr(self, "enemy_config"):
-            self._warrior_snapshots[key] = self.enemy_config.get_config_dict()
+            self._warrior_snapshots[key] = self._candidate_config_dict()
+        elif key == "enemy":
+            pending = getattr(self, "_enemy_materialize_after_id", None)
+            if pending is not None:
+                self.after_cancel(pending)
+                self._enemy_materialize_after_id = None
+            self._save_active_enemy_editor()
+            self._warrior_snapshots[key] = [dict(profile) for profile in self._enemy_profiles]
 
         tab = self.nametowidget(self._tab_id_for(key))
+        # Marcarla como descargada antes de destruir evita una segunda descarga
+        # si Tk cuela otro evento de cambio mientras procesa los widgets.
+        self._built_tabs.discard(key)
         for child in tab.winfo_children():
             child.destroy()
-        self._built_tabs.discard(key)
+        if key == "enemy":
+            self.enemy_editor = None
+            self.enemy_config = None
 
     def _candidate_for_simulation(self):
         if "candidate" in self._built_tabs:
-            return self.candidate_config.get_config_dict()
+            return self._candidate_config_dict()
         return self._warrior_snapshots["candidate"].copy()
 
-    def _custom_enemy_for_simulation(self):
+    def _custom_enemies_for_simulation(self):
         if "enemy" in self._built_tabs:
-            return self.enemy_config.get_config_dict()
-        return self._warrior_snapshots["enemy"].copy()
+            self._save_active_enemy_editor()
+            return [dict(profile) for profile in self._enemy_profiles]
+        stored = self._warrior_snapshots.get("enemy", self._enemy_profiles)
+        return [dict(profile) for profile in stored]
+
+    def _manual_enemy_indices(self, enemies, total_simulations, seed):
+        variants = 24 if self.enemy_level.get() else 1
+        count = max(1, len(enemies) * variants)
+        rng = np.random.default_rng(seed + 808)
+        return rng.integers(0, count, total_simulations, dtype=np.int64)
 
     def setup_tab_candidate(self, tab):
 
+        selector = ttk.LabelFrame(tab, text=" Identidad y procedencia ")
+        selector.pack(fill="x", padx=15, pady=(12, 3))
+        selector.columnconfigure(1, weight=2)
+        selector.columnconfigure(3, weight=2)
+        selector.columnconfigure(5, weight=2)
+        ttk.Label(selector, text="Nombre:").grid(row=0, column=0, padx=(10, 4), pady=7)
+        ttk.Entry(selector, textvariable=self.candidate_name).grid(
+            row=0, column=1, sticky="ew", padx=(0, 10), pady=7
+        )
+        ttk.Label(selector, text="Banda:").grid(row=0, column=2, padx=(0, 4), pady=7)
+        self.candidate_band_combo = ttk.Combobox(
+            selector, state="readonly",
+            values=("Selección libre", *(band.name for band in self._candidate_bands)),
+        )
+        self.candidate_band_combo.grid(row=0, column=3, sticky="ew", padx=(0, 10), pady=7)
+        self.candidate_band_combo.bind("<<ComboboxSelected>>", self._candidate_band_changed)
+        ttk.Label(selector, text="Guerrero:").grid(row=0, column=4, padx=(0, 4), pady=7)
+        self.candidate_profile_combo = ttk.Combobox(selector, state="disabled")
+        self.candidate_profile_combo.grid(row=0, column=5, sticky="ew", padx=(0, 10), pady=7)
+        self.candidate_profile_combo.bind("<<ComboboxSelected>>", self._candidate_profile_changed)
+
+        action_frame = ttk.Frame(selector)
+        action_frame.grid(row=1, column=0, columnspan=6, sticky="ew", padx=10, pady=(0, 7))
+        ttk.Label(action_frame, textvariable=self.candidate_catalog_status).pack(side="left", fill="x", expand=True)
+
+        candidate_skill_descriptions = dict(GENERAL_SKILL_DESCRIPTIONS)
+        candidate_skill_categories = dict(GENERAL_SKILL_CATEGORIES)
+        for band in self._candidate_bands:
+            candidate_skill_descriptions.update(
+                (skill.name, skill.description) for skill in band.skills
+            )
+            for skill in band.skills:
+                candidate_skill_categories.setdefault(skill.name, "special")
         self.candidate_config = WarriorConfigFrame(
             tab,
             "Configuración del Guerrero Candidato",
+            show_house_rules=False,
+            skill_descriptions=candidate_skill_descriptions,
+            skill_categories=candidate_skill_categories,
         )
 
         self.candidate_config.pack(
             fill="both",
             expand=True,
             padx=15,
-            pady=15,
+            pady=(3, 12),
         )
+        self.candidate_config.set_option_filter(None)
         if "candidate" in self._warrior_snapshots:
-            self.candidate_config.load_config(self._warrior_snapshots["candidate"])
+            self._restore_candidate_payload(self._warrior_snapshots["candidate"])
+        else:
+            self.candidate_band_combo.set("Selección libre")
+
+    def _candidate_config_dict(self):
+        config = self.candidate_config.get_config_dict()
+        config.update({
+            "candidate_name": self.candidate_name.get().strip() or "Candidato",
+            "candidate_band_id": self.candidate_band_id.get(),
+            "candidate_profile_id": self.candidate_profile_id.get(),
+        })
+        return config
+
+    def _candidate_band_changed(self, _event=None):
+        band = self._band_by_name.get(self.candidate_band_combo.get())
+        if band is None:
+            self.candidate_band_id.set("")
+            self.candidate_profile_id.set("")
+            self.candidate_profile_combo.set("")
+            self.candidate_profile_combo.config(values=(), state="disabled")
+            self.candidate_config.set_option_filter(None)
+            self.candidate_catalog_status.set("Selección libre: todas las opciones del simulador.")
+            return
+        self.candidate_band_id.set(band.band_id)
+        self.candidate_profile_id.set("")
+        self.candidate_profile_combo.config(
+            values=tuple(profile.name for profile in band.profiles), state="readonly"
+        )
+        self.candidate_profile_combo.set("Selecciona un guerrero")
+        self.candidate_config.set_option_filter(
+            None, extra_skills=(skill.name for skill in band.skills)
+        )
+        self.candidate_catalog_status.set(
+            f"{len(band.profiles)} perfiles disponibles. Elige uno para aplicar sus restricciones."
+        )
+
+    def _candidate_profile_changed(self, _event=None):
+        band = next((b for b in self._candidate_bands if b.band_id == self.candidate_band_id.get()), None)
+        if band is None:
+            return
+        profile = next((p for p in band.profiles if p.name == self.candidate_profile_combo.get()), None)
+        if profile is None:
+            return
+        self.candidate_profile_id.set(profile.profile_id)
+        self.candidate_name.set(profile.name)
+        default_weapon = next(iter(usable_main_weapons(profile)), "Daga")
+        self.candidate_config.load_config({
+            **profile.stats, "skills": [], "main_weapon": default_weapon,
+            "off_hand": "Ninguna", "armor": "Sin Armadura",
+        })
+        self.candidate_config.set_option_filter(profile)
+        omitted = []
+        if profile.fixed_equipment:
+            omitted.append("equipo fijo documentado")
+        if profile.rules:
+            omitted.append("reglas propias en la ficha")
+        suffix = f" · {' y '.join(omitted)}" if omitted else ""
+        self.candidate_catalog_status.set(
+            f"Perfil canónico aplicado: {profile.band_name} · {profile.profile_type}{suffix}."
+        )
+
+    def _candidate_metadata(self):
+        profile = find_profile(self.candidate_band_id.get(), self.candidate_profile_id.get())
+        metadata = {
+            "name": self.candidate_name.get().strip() or "Candidato",
+            "band_id": self.candidate_band_id.get(),
+            "profile_id": self.candidate_profile_id.get(),
+            "band_name": "Selección libre",
+            "profile_name": "Perfil libre",
+        }
+        if profile:
+            metadata.update({
+                "band_name": profile.band_name, "profile_name": profile.name,
+                "profile_type": profile.profile_type, "fixed_equipment": profile.fixed_equipment,
+                "restrictions": profile.restrictions, "rules": profile.rules,
+                "source": profile.source,
+            })
+        return metadata
+
+    def _candidate_workbook_payload(self):
+        difficulties = [name for name, variable in self.enemy_difficulties.items() if variable.get()]
+        opponent = {
+            "mode": "Muestra aleatoria" if self.enemy_mode.get() == "sample" else "Rival configurable",
+            "level": self.enemy_level.get(),
+            "description": ", ".join(difficulties) if self.enemy_mode.get() == "sample" else "Perfil configurable",
+        }
+        enemy_profiles = (
+            self._custom_enemies_for_simulation()
+            if self.enemy_mode.get() == "custom" else []
+        )
+        return {
+            "config": self._candidate_config_dict(), "candidate": self._candidate_metadata(),
+            "opponent": opponent,
+            "enemies": {
+                "mode": self.enemy_mode.get(), "level": self.enemy_level.get(),
+                "difficulties": difficulties, "profiles": enemy_profiles,
+            },
+        }
+
+    def _save_candidate(self):
+        default_name = re.sub(r"[^\w.-]+", "_", self.candidate_name.get().strip(), flags=re.UNICODE).strip("_") or "Candidato"
+        path = filedialog.asksaveasfilename(
+            title="Guardar libro de simulación", defaultextension=".xlsx",
+            filetypes=(("Libro de Excel", "*.xlsx"),), initialfile=f"{default_name}.xlsx",
+        )
+        if not path:
+            return
+        try:
+            save_candidate_workbook(path, self._candidate_workbook_payload())
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("No se pudo guardar", str(exc))
+            return
+        self.candidate_workbook_path = path
+        messagebox.showinfo(
+            "Libro guardado",
+            "Se han guardado el candidato, los enemigos y la configuración de la muestra.",
+        )
+
+    def _load_candidate(self):
+        path = filedialog.askopenfilename(
+            title="Cargar libro de simulación", filetypes=(("Libro de Excel", "*.xlsx"),)
+        )
+        if not path:
+            return
+        try:
+            payload = load_candidate_workbook(path)
+            self._restore_candidate_payload(payload["config"])
+            enemies = payload.get("enemies") or {}
+            self.enemy_mode.set(enemies.get("mode", self.enemy_mode.get()))
+            self.enemy_level.set(int(enemies.get("level", self.enemy_level.get())))
+            selected_difficulties = set(enemies.get("difficulties", ()))
+            if selected_difficulties:
+                for name, variable in self.enemy_difficulties.items():
+                    variable.set(name in selected_difficulties)
+            profiles = enemies.get("profiles") or ()
+            if profiles:
+                self._enemy_profiles = [dict(profile) for profile in profiles]
+                self._warrior_snapshots["enemy"] = [dict(profile) for profile in profiles]
+        except (OSError, CandidateWorkbookError, KeyError, ValueError) as exc:
+            messagebox.showerror("No se pudo cargar", str(exc))
+            return
+        self.candidate_workbook_path = path
+        messagebox.showinfo("Libro cargado", "El candidato y los enemigos se han recuperado correctamente.")
+
+    def _restore_candidate_payload(self, config):
+        self.candidate_name.set(config.get("candidate_name", "Candidato"))
+        band_id = config.get("candidate_band_id", "")
+        profile_id = config.get("candidate_profile_id", "")
+        profile = find_profile(band_id, profile_id)
+        if profile:
+            self.candidate_band_id.set(band_id)
+            self.candidate_profile_id.set(profile_id)
+            self.candidate_band_combo.set(profile.band_name)
+            band = next(b for b in self._candidate_bands if b.band_id == band_id)
+            self.candidate_profile_combo.config(values=tuple(p.name for p in band.profiles), state="readonly")
+            self.candidate_profile_combo.set(profile.name)
+            self.candidate_config.set_option_filter(profile)
+            self.candidate_catalog_status.set(f"Perfil cargado: {profile.band_name} · {profile.name}.")
+        else:
+            self.candidate_band_id.set("")
+            self.candidate_profile_id.set("")
+            self.candidate_band_combo.set("Selección libre")
+            self.candidate_profile_combo.set("")
+            self.candidate_profile_combo.config(values=(), state="disabled")
+            self.candidate_config.set_option_filter(None)
+            self.candidate_catalog_status.set("Selección libre cargada.")
+        self.candidate_config.load_config(config)
+        self.candidate_config.set_option_filter(profile)
 
     def setup_tab_enemy(self, tab):
 
@@ -862,7 +1433,7 @@ class TrollheimApp(tk.Tk):
 
         sample_frame = ttk.LabelFrame(
             tab,
-            text=" Opción 1 · Muestra aleatoria ",
+            text=" Opción 1 ",
         )
 
         sample_frame.pack(
@@ -873,7 +1444,10 @@ class TrollheimApp(tk.Tk):
 
         r1 = ttk.Radiobutton(
             sample_frame,
-            text="Usar una muestra ponderada por dificultad",
+            text=(
+                "Muestra aleatoria: el simulador elige perfiles, equipo legal y mejoras "
+                "para cada combate, respetando la frecuencia de cada grupo de dificultad."
+            ),
             variable=self.enemy_mode,
             value="sample",
             command=self.toggle_enemy_mode,
@@ -882,19 +1456,7 @@ class TrollheimApp(tk.Tk):
         r1.pack(
             anchor="w",
             padx=10,
-            pady=(5, 0),
-        )
-
-        ttk.Label(
-            sample_frame,
-            text=(
-                "El simulador elige perfiles, equipo legal y mejoras para cada combate."
-            ),
-            font=("Arial", 8, "italic"),
-        ).pack(
-            anchor="w",
-            padx=30,
-            pady=(2, 5),
+            pady=6,
         )
 
         self.checklist_frame = ttk.Frame(
@@ -919,15 +1481,9 @@ class TrollheimApp(tk.Tk):
             checkbox.pack(side="left", padx=8)
             self.enemy_check_widgets.append(checkbox)
 
-        ttk.Label(
-            self.checklist_frame,
-            text="Cada grupo conserva internamente sus perfiles y frecuencias ponderadas.",
-            font=("Arial", 8, "italic"),
-        ).pack(anchor="w", pady=(2, 0))
-
         custom_frame = ttk.LabelFrame(
             tab,
-            text=" Opción 2 · Rival configurable ",
+            text=" Opción 2 ",
         )
 
         custom_frame.pack(
@@ -938,42 +1494,45 @@ class TrollheimApp(tk.Tk):
 
         ttk.Radiobutton(
             custom_frame,
-            text="Usar un único perfil configurado manualmente",
+            text=(
+                "Rivales configurables: cada pestaña representa un rival posible; "
+                "el nivel añade mejoras aleatorias a todos ellos."
+            ),
             variable=self.enemy_mode,
             value="custom",
             command=self.toggle_enemy_mode,
         ).pack(
             anchor="w",
             padx=10,
-            pady=(5, 0),
+            pady=6,
         )
 
-        ttk.Label(
-            custom_frame,
-            text=(
-                "Los atributos y el equipo de abajo forman la ficha base; el nivel añade mejoras aleatorias."
-            ),
-            font=("Arial", 8, "italic"),
-        ).pack(
-            anchor="w",
-            padx=30,
-            pady=(2, 5),
+        enemy_tools = ttk.Frame(tab)
+        enemy_tools.pack(fill="x", padx=15, pady=(4, 0))
+        self.btn_add_enemy = ttk.Button(
+            enemy_tools, text="＋ Añadir enemigo", command=self._add_enemy_profile
         )
-
-        self.enemy_config = WarriorConfigFrame(
-            tab,
-            "Configuración del Rival Personalizado",
+        self.btn_add_enemy.pack(side="left")
+        self.btn_remove_enemy = ttk.Button(
+            enemy_tools, text="− Eliminar enemigo", command=self._remove_enemy_profile
         )
+        self.btn_remove_enemy.pack(side="left", padx=6)
 
-        self.enemy_config.pack(
-            fill="both",
-            expand=True,
-            padx=15,
-            pady=5,
-        )
+        self.enemy_notebook = ttk.Notebook(tab)
+        self.enemy_notebook.pack(fill="both", expand=True, padx=15, pady=(3, 5))
+        self.enemy_notebook.bind("<<NotebookTabChanged>>", self._enemy_tab_changed)
 
-        if "enemy" in self._warrior_snapshots:
-            self.enemy_config.load_config(self._warrior_snapshots["enemy"])
+        stored = self._warrior_snapshots.get("enemy", self._enemy_profiles)
+        self._enemy_profiles = [dict(profile) for profile in stored]
+        if not self._enemy_profiles:
+            self._enemy_profiles = [{"enemy_name": "Enemigo 1"}]
+        self._active_enemy_editor_index = None
+        self.enemy_editor = None
+        self.enemy_config = None
+        for index, profile in enumerate(self._enemy_profiles):
+            page = ttk.Frame(self.enemy_notebook)
+            self.enemy_notebook.add(page, text=profile.get("enemy_name", f"Enemigo {index + 1}"))
+        self._enemy_materialize_after_id = self.after_idle(self._materialize_selected_enemy)
 
         self.toggle_enemy_mode()
 
@@ -993,9 +1552,8 @@ class TrollheimApp(tk.Tk):
                     state="disabled"
                 )
 
-            self.enemy_config.set_enabled(
-                True
-            )
+            if self._enemy_editor_exists():
+                self.enemy_editor.set_enabled(True)
 
         else:
 
@@ -1006,9 +1564,76 @@ class TrollheimApp(tk.Tk):
                     state="normal"
                 )
 
-            self.enemy_config.set_enabled(
-                False
-            )
+            if self._enemy_editor_exists():
+                self.enemy_editor.set_enabled(False)
+
+        if hasattr(self, "btn_remove_enemy"):
+            self.btn_remove_enemy.config(state="normal" if is_custom else "disabled")
+        if hasattr(self, "btn_add_enemy"):
+            self.btn_add_enemy.config(state="normal" if is_custom else "disabled")
+        if hasattr(self, "enemy_notebook"):
+            self.enemy_notebook.state(("!disabled",) if is_custom else ("disabled",))
+
+    def _save_active_enemy_editor(self):
+        index = self._active_enemy_editor_index
+        if index is not None and self._enemy_editor_exists():
+            self._enemy_profiles[index] = self.enemy_editor.get_config_dict()
+
+    def _enemy_editor_exists(self):
+        editor = getattr(self, "enemy_editor", None)
+        if editor is None:
+            return False
+        try:
+            return bool(editor.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _materialize_selected_enemy(self):
+        self._enemy_materialize_after_id = None
+        if not hasattr(self, "enemy_notebook") or not self.enemy_notebook.tabs():
+            return
+        selected = self.enemy_notebook.select()
+        index = self.enemy_notebook.index(selected)
+        if index == self._active_enemy_editor_index and self._enemy_editor_exists():
+            return
+        self._save_active_enemy_editor()
+        if self._enemy_editor_exists():
+            self.enemy_editor.destroy()
+        page = self.nametowidget(selected)
+        self._active_enemy_editor_index = index
+        self.enemy_editor = EnemyProfileEditor(
+            page, self._candidate_bands, self._enemy_profiles[index],
+            on_name_change=lambda name, page_id=selected: self.enemy_notebook.tab(page_id, text=name),
+        )
+        self.enemy_editor.pack(fill="both", expand=True)
+        self.enemy_config = self.enemy_editor.config  # Compatibilidad con controles comunes.
+        self.enemy_editor.set_enabled(self.enemy_mode.get() == "custom")
+
+    def _enemy_tab_changed(self, _event=None):
+        self._materialize_selected_enemy()
+
+    def _add_enemy_profile(self):
+        self._save_active_enemy_editor()
+        number = len(self._enemy_profiles) + 1
+        self._enemy_profiles.append({"enemy_name": f"Enemigo {number}"})
+        page = ttk.Frame(self.enemy_notebook)
+        self.enemy_notebook.add(page, text=f"Enemigo {number}")
+        self.enemy_notebook.select(page)
+        self._materialize_selected_enemy()
+
+    def _remove_enemy_profile(self):
+        if len(self._enemy_profiles) <= 1:
+            messagebox.showinfo("Enemigos", "Debe quedar al menos un perfil manual.")
+            return
+        index = self.enemy_notebook.index(self.enemy_notebook.select())
+        self._save_active_enemy_editor()
+        page_id = self.enemy_notebook.tabs()[index]
+        if hasattr(self, "enemy_editor"):
+            self.enemy_editor.destroy()
+        self._active_enemy_editor_index = None
+        self.enemy_notebook.forget(page_id)
+        del self._enemy_profiles[index]
+        self._materialize_selected_enemy()
 
     def _sort_treeview(self, tree, column, descending=False):
         rows = [(tree.set(item, column), item) for item in tree.get_children("")]
@@ -1876,10 +2501,6 @@ class TrollheimApp(tk.Tk):
         return len(non_poisons) == len(set(non_poisons))
 
     @staticmethod
-    def _equipment_pair_is_legal(first, second):
-        return TrollheimApp._equipment_combination_is_legal((first, second))
-
-    @staticmethod
     def _equipment_loadouts(options, maximum_items):
         loadouts = []
         for size in range(1, maximum_items + 1):
@@ -1906,10 +2527,14 @@ class TrollheimApp(tk.Tk):
             if weapon not in TWO_HANDED_WEAPONS and weapon not in PAIRED_WEAPONS
         ]
         offhand = [weapon for weapon in one_handed if weapon in OFFHAND_CODES]
-        for weapon in one_handed:
+        main_hand = [
+            weapon for weapon in one_handed
+            if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS
+        ]
+        for weapon in main_hand:
             loadouts.append(("Single", weapon, "Ninguna"))
             loadouts.append(("Shield", weapon, "Escudo"))
-        for main in one_handed:
+        for main in main_hand:
             if main == "Mangual":
                 continue
             if main in {"Rebanadora", "Pinchagarrapatos"}:
@@ -2009,8 +2634,10 @@ class TrollheimApp(tk.Tk):
         # La interfaz también quiere respirar mientras los dados hacen horas extra.
         worker_limit = max(1, available_cpus - 1)
         worker_count = min(8, worker_limit, len(tasks))
-        group_count = min(32, len(process_tasks))
-        groups = [process_tasks[index::group_count] for index in range(group_count)]
+        groups = [
+            process_tasks[index:index + TASK_GROUP_SIZE]
+            for index in range(0, len(process_tasks), TASK_GROUP_SIZE)
+        ]
         results = []
 
         with ProcessPoolExecutor(
@@ -2029,7 +2656,7 @@ class TrollheimApp(tk.Tk):
         return results
 
     @staticmethod
-    def _deduplicate_combo_tasks(tasks):
+    def _deduplicate_tasks(tasks):
         """Agrupa combos que producen exactamente el mismo combatiente efectivo."""
         unique_tasks = []
         aliases = {}
@@ -2146,7 +2773,7 @@ class TrollheimApp(tk.Tk):
 
             if enemy_mode == "custom":
 
-                custom_enemy = self._custom_enemy_for_simulation()
+                custom_enemy = self._custom_enemies_for_simulation()
 
             else:
 
@@ -2189,9 +2816,8 @@ class TrollheimApp(tk.Tk):
 
             else:
 
-                shared_enemy_indices = np.zeros(
-                    total_simulations,
-                    dtype=np.int64,
+                shared_enemy_indices = self._manual_enemy_indices(
+                    custom_enemy, total_simulations, master_seed
                 )
 
             progress_queue = queue.Queue()
@@ -2251,6 +2877,11 @@ class TrollheimApp(tk.Tk):
 
             total_tasks = len(tasks)
 
+            unique_tasks, aliases = self._deduplicate_tasks(tasks)
+            completion_weights = {
+                canonical: len(group) for canonical, group in aliases.items()
+            }
+
             raw_results = {
                 mode: []
                 for mode in modes
@@ -2270,10 +2901,16 @@ class TrollheimApp(tk.Tk):
                 PROGRESS_POLL_MS, self._poll_simulation_progress
             )
 
-            for mode, label, win_rate, is_base in self._run_tasks(
-                tasks, progress_queue, total_simulations
+            for mode, label, win_rate, _is_base in self._run_tasks(
+                unique_tasks,
+                progress_queue,
+                total_simulations,
+                completion_weights,
             ):
-                raw_results[mode].append((label, win_rate, is_base))
+                for alias_label, alias_is_base in aliases[(mode, label)]:
+                    raw_results[mode].append(
+                        (alias_label, win_rate, alias_is_base)
+                    )
 
 
             mode_results = {}
@@ -2409,7 +3046,7 @@ class TrollheimApp(tk.Tk):
             custom_enemy = None
             active_pool_names = []
             if enemy_mode == "custom":
-                custom_enemy = self._custom_enemy_for_simulation()
+                custom_enemy = self._custom_enemies_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2427,7 +3064,9 @@ class TrollheimApp(tk.Tk):
                     ENEMY_VARIANTS_PER_PROFILE,
                 )
             else:
-                shared_enemy_indices = np.zeros(total_simulations, dtype=np.int64)
+                shared_enemy_indices = self._manual_enemy_indices(
+                    custom_enemy, total_simulations, master_seed
+                )
 
             progress_queue = queue.Queue()
             self._progress_queue = progress_queue
@@ -2454,7 +3093,7 @@ class TrollheimApp(tk.Tk):
                     ))
 
             total_tasks = len(tasks)
-            unique_tasks, aliases = self._deduplicate_combo_tasks(tasks)
+            unique_tasks, aliases = self._deduplicate_tasks(tasks)
             completion_weights = {
                 canonical: len(group) for canonical, group in aliases.items()
             }
@@ -2618,7 +3257,7 @@ class TrollheimApp(tk.Tk):
             custom_enemy = None
             active_pool_names = []
             if enemy_mode == "custom":
-                custom_enemy = self._custom_enemy_for_simulation()
+                custom_enemy = self._custom_enemies_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2635,7 +3274,9 @@ class TrollheimApp(tk.Tk):
                     ENEMY_VARIANTS_PER_PROFILE,
                 )
             else:
-                shared_enemy_indices = np.zeros(total_simulations, dtype=np.int64)
+                shared_enemy_indices = self._manual_enemy_indices(
+                    custom_enemy, total_simulations, master_seed
+                )
 
             progress_queue = queue.Queue()
             self._progress_queue = progress_queue
@@ -2663,7 +3304,7 @@ class TrollheimApp(tk.Tk):
                 ))
 
             total_tasks = len(tasks)
-            unique_tasks, aliases = self._deduplicate_combo_tasks(tasks)
+            unique_tasks, aliases = self._deduplicate_tasks(tasks)
             completion_weights = {
                 canonical: len(group) for canonical, group in aliases.items()
             }
@@ -2828,7 +3469,7 @@ class TrollheimApp(tk.Tk):
             active_pool_names = []
 
             if enemy_mode == "custom":
-                custom_enemy = self._custom_enemy_for_simulation()
+                custom_enemy = self._custom_enemies_for_simulation()
             else:
                 active_pool_names = self._active_enemy_names()
 
@@ -2848,9 +3489,8 @@ class TrollheimApp(tk.Tk):
                     ENEMY_VARIANTS_PER_PROFILE,
                 )
             else:
-                shared_enemy_indices = np.zeros(
-                    total_simulations,
-                    dtype=np.int64,
+                shared_enemy_indices = self._manual_enemy_indices(
+                    custom_enemy, total_simulations, master_seed
                 )
 
             progress_queue = queue.Queue()
@@ -2915,7 +3555,7 @@ class TrollheimApp(tk.Tk):
                         ))
 
             total_tasks = len(tasks)
-            unique_tasks, aliases = self._deduplicate_combo_tasks(tasks)
+            unique_tasks, aliases = self._deduplicate_tasks(tasks)
             completion_weights = {
                 canonical: len(group)
                 for canonical, group in aliases.items()

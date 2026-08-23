@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24,<3",
+    "openpyxl>=3.1,<4",
+    "PyYAML>=6,<7",
 ]
 
 [project.gui-scripts]
@@ -20,6 +22,10 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.data-files]
+"share/trollheim_simulator/knowledge/bands" = ["sources/knowledge/bands/*.yaml"]
+"share/trollheim_simulator/knowledge/catalog" = ["sources/knowledge/catalog/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

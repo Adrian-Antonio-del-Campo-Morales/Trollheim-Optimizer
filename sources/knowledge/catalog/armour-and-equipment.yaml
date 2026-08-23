@@ -1,0 +1,195 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "equipment-armadura-ligera",
+      "kind": "equipment",
+      "name": "Armadura ligera",
+      "category": "Protecciones básicas",
+      "rule_summary": "Salvación 6+.",
+      "source": "trollheim.pdf, p. 50",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-armadura-pesada",
+      "kind": "equipment",
+      "name": "Armadura pesada",
+      "category": "Protecciones básicas",
+      "rule_summary": "Salvación 5+.",
+      "source": "trollheim.pdf, p. 50",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-armadura-de-gromril",
+      "kind": "equipment",
+      "name": "Armadura de gromril",
+      "category": "Protecciones básicas",
+      "rule_summary": "Salvación 4+.",
+      "source": "trollheim.pdf, p. 51",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-escudo",
+      "kind": "equipment",
+      "name": "Escudo",
+      "category": "Protecciones básicas",
+      "rule_summary": "Mejora en 1 la salvación; incompatible en cuerpo a cuerpo con armas a dos manos.",
+      "source": "trollheim.pdf, pp. 50-51",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-casco",
+      "kind": "equipment",
+      "name": "Casco",
+      "category": "Protecciones básicas",
+      "rule_summary": "Al quedar Aturdido, 4+ lo convierte en Derribado.",
+      "source": "trollheim.pdf, p. 51",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-amuleto-de-la-suerte",
+      "kind": "equipment",
+      "name": "Amuleto de la suerte",
+      "category": "Protecciones básicas",
+      "rule_summary": "Ignora el primer impacto recibido con 4+ y se consume.",
+      "source": "trollheim.pdf, p. 53; khemri.pdf, p. 115",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-gromril",
+      "kind": "equipment",
+      "name": "Gromril",
+      "category": "Materiales de arma",
+      "rule_summary": "Penetración adicional de -1.",
+      "source": "trollheim.pdf, p. 43",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-ithilmar",
+      "kind": "equipment",
+      "name": "Ithilmar",
+      "category": "Materiales de arma",
+      "rule_summary": "+1 Iniciativa.",
+      "source": "trollheim.pdf, p. 43",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-obsidiana",
+      "kind": "equipment",
+      "name": "Obsidiana",
+      "category": "Materiales de arma",
+      "rule_summary": "+1 Fuerza y ataca último.",
+      "source": "lustria.pdf, reglas de equipo de Hombres Lagarto",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-acero-oscuro",
+      "kind": "equipment",
+      "name": "Acero oscuro",
+      "category": "Materiales de arma",
+      "rule_summary": "+1 al crítico y mejora determinados resultados de Heridas.",
+      "source": "lustria.pdf, equipo de Elfos Oscuros",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-rodela",
+      "kind": "equipment",
+      "name": "Rodela",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Permite parar; junto a espada repite la parada.",
+      "source": "trollheim.pdf, pp. 37 y 51",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-armadura-de-ithilmar",
+      "kind": "equipment",
+      "name": "Armadura de Ithilmar",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Salvación 5+; su ventaja de movimiento no afecta al duelo.",
+      "source": "trollheim.pdf, p. 51",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-cuero-endurecido",
+      "kind": "equipment",
+      "name": "Cuero endurecido",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Actúa como armadura ligera y sólo admite casco o rodela como protección adicional.",
+      "source": "caos-en-las-calles.pdf, p. 69",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-armadura-de-placas",
+      "kind": "equipment",
+      "name": "Armadura de placas",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Salvación 4+ y penalización de movimiento. En duelo importa la salvación.",
+      "source": "caos-en-las-calles.pdf, p. 69",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-tunica-de-mago",
+      "kind": "equipment",
+      "name": "Túnica de mago",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Actúa como armadura ligera.",
+      "source": "caos-en-las-calles.pdf, p. 68",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-ropajes-ninja",
+      "kind": "equipment",
+      "name": "Ropajes ninja",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Actúan como armadura ligera y admiten casco/rodela.",
+      "source": "khemri.pdf, p. 121",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-capa-de-dragon-marino",
+      "kind": "equipment",
+      "name": "Capa de dragón marino",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Protección exclusiva de Elfos Oscuros con efecto defensivo.",
+      "source": "lustria.pdf, p. 60",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-ropajes-de-asesino-eshin",
+      "kind": "equipment",
+      "name": "Ropajes de Asesino Eshin",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Salvación 6+ y repetición de salvaciones fallidas; combinables sólo con casco.",
+      "source": "caos-en-las-calles.pdf, p. 159",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "equipment-armadura-kitinoza",
+      "kind": "equipment",
+      "name": "Armadura kitinoza",
+      "category": "Protecciones adicionales",
+      "rule_summary": "Salvación 6+; su vulnerabilidad al fuego puede afectar a armas incendiarias.",
+      "source": "lustria.pdf, p. 99",
+      "transcription": "summary",
+      "implemented": null
+    }
+  ]
+}

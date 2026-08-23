@@ -1,0 +1,565 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "weapon-daga",
+      "kind": "weapon",
+      "name": "Daga",
+      "category": "Armas generales",
+      "rule_summary": "El defensor mejora su salvación en 1; concede 6+ si no tenía armadura.",
+      "source": "trollheim.pdf, p. 40",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-maza-martillo-o-garrote",
+      "kind": "weapon",
+      "name": "Maza, martillo o garrote",
+      "category": "Armas generales",
+      "rule_summary": "Conmoción: 2-4 aturde al resolver heridas.",
+      "source": "trollheim.pdf, p. 40",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-hacha",
+      "kind": "weapon",
+      "name": "Hacha",
+      "category": "Armas generales",
+      "rule_summary": "Penetración adicional de -1 a la salvación.",
+      "source": "trollheim.pdf, p. 41",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espada",
+      "kind": "weapon",
+      "name": "Espada",
+      "category": "Armas generales",
+      "rule_summary": "Permite una parada.",
+      "source": "trollheim.pdf, p. 41",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-mayal",
+      "kind": "weapon",
+      "name": "Mayal",
+      "category": "Armas generales",
+      "rule_summary": "Dos manos; +2 F en la primera ronda.",
+      "source": "trollheim.pdf, p. 41",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-mangual",
+      "kind": "weapon",
+      "name": "Mangual",
+      "category": "Armas generales",
+      "rule_summary": "+1 F en la primera ronda.",
+      "source": "trollheim.pdf, p. 42",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-alabarda",
+      "kind": "weapon",
+      "name": "Alabarda",
+      "category": "Armas generales",
+      "rule_summary": "Dos manos; +1 F.",
+      "source": "trollheim.pdf, p. 42",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-lanza",
+      "kind": "weapon",
+      "name": "Lanza",
+      "category": "Armas generales",
+      "rule_summary": "Ataca primero en la primera ronda; puede combinarse con escudo.",
+      "source": "trollheim.pdf, p. 42 y modificación de Trollheim",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-arma-a-dos-manos",
+      "kind": "weapon",
+      "name": "Arma a dos manos",
+      "category": "Armas generales",
+      "rule_summary": "+2 F, ataca último y ocupa ambas manos.",
+      "source": "trollheim.pdf, p. 43",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-hacha-de-piedra",
+      "kind": "weapon",
+      "name": "Hacha de piedra",
+      "category": "Armas generales",
+      "rule_summary": "Perfil contundente, sin el filo de un hacha metálica.",
+      "source": "lustria.pdf, p. 20",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-estoque",
+      "kind": "weapon",
+      "name": "Estoque",
+      "category": "Armas generales",
+      "rule_summary": "Parada, F-1 y aluvión de ataques.",
+      "source": "caos-en-las-calles.pdf, p. 62",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-pica",
+      "kind": "weapon",
+      "name": "Pica",
+      "category": "Armas generales",
+      "rule_summary": "Arma larga a dos manos con prioridad en la primera ronda.",
+      "source": "lustria.pdf, pp. 21-22",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espada-elfica-a-dos-manos",
+      "kind": "weapon",
+      "name": "Espada élfica a dos manos",
+      "category": "Armas generales",
+      "rule_summary": "+2 F, ataca último, dos manos y parada.",
+      "source": "lustria.pdf, p. 23",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-ankus",
+      "kind": "weapon",
+      "name": "Ankus",
+      "category": "Armas generales",
+      "rule_summary": "Ataca primero y aplica conmoción.",
+      "source": "khemri.pdf, p. 18",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-yambiya",
+      "kind": "weapon",
+      "name": "Yambiya",
+      "category": "Armas generales",
+      "rule_summary": "Daga: mejora en 1 la salvación del defensor.",
+      "source": "khemri.pdf, p. 18",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-katar",
+      "kind": "weapon",
+      "name": "Katar",
+      "category": "Armas generales",
+      "rule_summary": "Penetración adicional de -1.",
+      "source": "khemri.pdf, p. 18",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-guadana",
+      "kind": "weapon",
+      "name": "Guadaña",
+      "category": "Armas generales",
+      "rule_summary": "Dos manos y penetración adicional de -1.",
+      "source": "khemri.pdf, p. 19",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-alfanje",
+      "kind": "weapon",
+      "name": "Alfanje",
+      "category": "Armas generales",
+      "rule_summary": "Permite parar y contraatacar en circunstancias concretas.",
+      "source": "khemri.pdf, p. 19",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-cimitarra",
+      "kind": "weapon",
+      "name": "Cimitarra",
+      "category": "Armas generales",
+      "rule_summary": "Parada y penetración adicional de -1.",
+      "source": "khemri.pdf, p. 19",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-gran-cimitarra",
+      "kind": "weapon",
+      "name": "Gran cimitarra",
+      "category": "Armas generales",
+      "rule_summary": "Dos manos, +2 F, ataca último, parada y penetración.",
+      "source": "khemri.pdf, p. 20",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-bagh-nakh",
+      "kind": "weapon",
+      "name": "Bagh Nakh",
+      "category": "Armas generales",
+      "rule_summary": "Par de armas; ataque adicional, +1 F y penetración.",
+      "source": "khemri.pdf, p. 20",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-rompe-espadas",
+      "kind": "weapon",
+      "name": "Rompe Espadas",
+      "category": "Armas generales",
+      "rule_summary": "Parada y posibilidad de atrapar/destruir el arma enemiga.",
+      "source": "caos-en-las-calles.pdf, p. 63",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-vara-brasero",
+      "kind": "weapon",
+      "name": "Vara brasero",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, +1 F y efecto incendiario.",
+      "source": "caos-en-las-calles.pdf, p. 63",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-punos-de-bronce",
+      "kind": "weapon",
+      "name": "Puños de bronce",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Par, ataque adicional y modificadores propios al golpear.",
+      "source": "caos-en-las-calles.pdf, p. 64",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-mazo-de-guerra",
+      "kind": "weapon",
+      "name": "Mazo de guerra",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, +2 F, lento y difícil de parar.",
+      "source": "caos-en-las-calles.pdf, p. 64",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-rebanadora",
+      "kind": "weapon",
+      "name": "Rebanadora",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "+1 F en la primera ronda, pesada, difícil de usar y afilada.",
+      "source": "caos-en-las-calles.pdf, p. 65",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-garrapato-encadenado",
+      "kind": "weapon",
+      "name": "Garrapato encadenado",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "F3, prioridad y comportamiento impredecible; no puede pararse.",
+      "source": "caos-en-las-calles.pdf, p. 65",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-pinchagarrapatos",
+      "kind": "weapon",
+      "name": "Pinchagarrapatos",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Arma larga; sus reglas adicionales son contra garrapatos.",
+      "source": "caos-en-las-calles.pdf, p. 65",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espada-de-doble-hoja",
+      "kind": "weapon",
+      "name": "Espada de doble hoja",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, ataque adicional y dos intentos de parada distintos por ronda.",
+      "source": "caos-en-las-calles.pdf, p. 66",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-hacha-enana",
+      "kind": "weapon",
+      "name": "Hacha enana",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Parada y penetración adicional de -1.",
+      "source": "caos-en-las-calles.pdf, p. 66",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-tridente",
+      "kind": "weapon",
+      "name": "Tridente",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Parada y prioridad durante la primera ronda.",
+      "source": "caos-en-las-calles.pdf, p. 119",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-guantelete-con-pincho",
+      "kind": "weapon",
+      "name": "Guantelete con pincho",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Parada; puede acompañar armas `Difícil de usar`.",
+      "source": "caos-en-las-calles.pdf, p. 119",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-martillo-sigmarita",
+      "kind": "weapon",
+      "name": "Martillo sigmarita",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "+1 F, conmoción y efecto sagrado fuera del duelo ordinario.",
+      "source": "trollheim.pdf, p. 85",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-latigo-de-acero",
+      "kind": "weapon",
+      "name": "Látigo de acero",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "No puede pararse; +1 A al cargar o recibir una carga.",
+      "source": "trollheim.pdf, p. 85",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-garras-de-combate-eshin",
+      "kind": "weapon",
+      "name": "Garras de combate Eshin",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Par, ataque adicional y repetición de una parada fallida. El +1 I solo se aplica a chequeos para trepar; no aporta penetración.",
+      "source": "trollheim.pdf, p. 92",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espadas-supurantes",
+      "kind": "weapon",
+      "name": "Espadas supurantes",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Par, ataque adicional, parada y loto negro permanente.",
+      "source": "trollheim.pdf, p. 92",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-baculo-de-serpiente",
+      "kind": "weapon",
+      "name": "Báculo de serpiente",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, parada y ataque especial que sustituye los normales.",
+      "source": "khemri.pdf, p. 42",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-kusara-kama",
+      "kind": "weapon",
+      "name": "Kusara Kama",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, penetración y puede reducir los ataques del rival.",
+      "source": "caos-en-las-calles.pdf, p. 158",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espada-bruja",
+      "kind": "weapon",
+      "name": "Espada bruja",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Parada y +1 F durante la primera ronda.",
+      "source": "caos-en-las-calles.pdf, p. 160",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-garfio-largo",
+      "kind": "weapon",
+      "name": "Garfio largo",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "Dos manos, F-1 y Ataca primero durante la primera ronda.",
+      "source": "lustria.pdf, p. 86",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-azote-pirata",
+      "kind": "weapon",
+      "name": "Azote pirata",
+      "category": "Armas exclusivas de banda",
+      "rule_summary": "No puede pararse; +1 A al cargar/ser cargado y favorece la salvación enemiga.",
+      "source": "lustria.pdf, equipo pirata",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-pistola-y-pistola-de-duelo",
+      "kind": "weapon",
+      "name": "Pistola y pistola de duelo",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Un ataque de F4 por pistola en la primera ronda de combate, con penetración.",
+      "source": "trollheim.pdf, pp. 47-48",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-bo",
+      "kind": "weapon",
+      "name": "Bo",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Dos manos, parada y ataque adicional.",
+      "source": "khemri.pdf, p. 121",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-dagas-envenenadas",
+      "kind": "weapon",
+      "name": "Dagas envenenadas",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Par, +1 I y los 6 para impactar hieren automáticamente.",
+      "source": "khemri.pdf, p. 78",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-latigo-ofidio",
+      "kind": "weapon",
+      "name": "Látigo ofidio",
+      "category": "Otras armas relevantes",
+      "rule_summary": "No puede pararse, +1 A al cargar/ser cargada y loto negro permanente.",
+      "source": "khemri.pdf, equipo de Hermanas de Sangre",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-latigo-del-senor-de-las-bestias",
+      "kind": "weapon",
+      "name": "Látigo del Señor de las Bestias",
+      "category": "Otras armas relevantes",
+      "rule_summary": "No puede pararse y da +1 A al cargar/ser cargado.",
+      "source": "lustria.pdf, p. 60",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-guantelete-solar",
+      "kind": "weapon",
+      "name": "Guantelete solar",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Arma secundaria de F4 que ignora armadura.",
+      "source": "lustria.pdf, p. 69",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-espada-de-transformacion-impia",
+      "kind": "weapon",
+      "name": "Espada de transformación impía",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Parada; la creación posterior de no muertos queda fuera del duelo.",
+      "source": "khemri.pdf, p. 21",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-estilete",
+      "kind": "weapon",
+      "name": "Estilete",
+      "category": "Otras armas relevantes",
+      "rule_summary": "+1 A con F-1.",
+      "source": "caos-en-las-calles.pdf, p. 271",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-garra-de-los-ancestrales",
+      "kind": "weapon",
+      "name": "Garra de los Ancestrales",
+      "category": "Otras armas relevantes",
+      "rule_summary": "F+1 y niega toda salvación por armadura.",
+      "source": "lustria.pdf, p. 69",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-draich",
+      "kind": "weapon",
+      "name": "Draich",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Dos manos, +2 F, ataca último, parada, +1 al crítico y 2-4 aturde.",
+      "source": "lustria.pdf, p. 60",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-yari",
+      "kind": "weapon",
+      "name": "Yari",
+      "category": "Otras armas relevantes",
+      "rule_summary": "A una mano da parada; a dos manos da prioridad y parada.",
+      "source": "caos-en-las-calles.pdf, p. 159",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-cuchillo-de-muerte",
+      "kind": "weapon",
+      "name": "Cuchillo de Muerte",
+      "category": "Otras armas relevantes",
+      "rule_summary": "F-1, niega armadura y suma +1 en la Tabla de Heridas.",
+      "source": "caos-en-las-calles.pdf, p. 159",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-daga-de-ponzona",
+      "kind": "weapon",
+      "name": "Daga de Ponzoña",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Regla de daga; con 6 al impactar puede causar otra herida tras chequeo de R.",
+      "source": "lustria.pdf, p. 76",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-incensario",
+      "kind": "weapon",
+      "name": "Incensario",
+      "category": "Otras armas relevantes",
+      "rule_summary": "Dos manos, +2 F en primera ronda y chequeos de R que pueden herir a ambos.",
+      "source": "lustria.pdf, p. 76",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "weapon-bola-con-kadena",
+      "kind": "weapon",
+      "name": "Bola con Kadena",
+      "category": "Otras armas relevantes",
+      "rule_summary": "F+2, 1D3 heridas, niega armadura, -1 para impactar al portador y exige Hongos Pirakabezas.",
+      "source": "caos-en-las-calles.pdf, p. 128",
+      "transcription": "summary",
+      "implemented": null
+    }
+  ]
+}
