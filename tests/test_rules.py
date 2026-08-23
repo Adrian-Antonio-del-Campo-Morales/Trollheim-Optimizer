@@ -8,6 +8,7 @@ from trollheim_simulator.engine import (
     _combat_initiative,
     _extra_armour_penalty,
     _house_rule_hit_penalty,
+    _strength_armour_penalty,
     _make_fighter,
     _nb_armour_save,
     _nb_to_hit,
@@ -65,7 +66,6 @@ from trollheim_simulator.rules import (
     PREPARATION_MAD_CAP,
     PREPARATION_HEAD_SPLITTER,
     SKILL_FENCER,
-    SKILL_SCIMITAR_FENCER,
 )
 
 
@@ -166,15 +166,45 @@ def test_house_rules_apply_the_expected_hit_penalties():
     assert _house_rule_hit_penalty(both_rules, BASE_FIGHTER["A"]) == 2
 
 
-def test_fencing_expertise_unifies_swords_and_scimitars():
+def test_better_armour_and_useful_shields_improve_the_save():
+    light = _make_fighter(BASE_FIGHTER | {"armor": "Armadura Ligera"})
+    better = _make_fighter(BASE_FIGHTER | {
+        "armor": "Armadura Ligera", "house_rule_better_armour": True,
+    })
+    shield = _make_fighter(BASE_FIGHTER | {"off_hand": "Escudo"})
+    useful = _make_fighter(BASE_FIGHTER | {
+        "off_hand": "Escudo", "house_rule_useful_shields": True,
+    })
+    assert better[8] == light[8] - 1
+    assert useful[8] == shield[8] - 1
+
+
+def test_sea_dragon_cloak_is_equipment_with_its_own_save():
+    cloak = _make_fighter(BASE_FIGHTER | {"has_sea_dragon_cloak": True})
+    combined = _make_fighter(BASE_FIGHTER | {
+        "armor": "Armadura Ligera", "has_sea_dragon_cloak": True,
+    })
+    better_cloak = _make_fighter(BASE_FIGHTER | {
+        "has_sea_dragon_cloak": True, "house_rule_better_armour": True,
+    })
+    assert cloak[8] == 5
+    assert combined[8] == 5
+    assert better_cloak[8] == cloak[8]
+
+
+def test_hard_armour_delays_strength_penetration_until_strength_five():
+    normal = _make_fighter(BASE_FIGHTER)
+    hard = _make_fighter(BASE_FIGHTER | {"house_rule_hard_armour": True})
+    assert _strength_armour_penalty(normal, 4) == 1
+    assert _strength_armour_penalty(hard, 4) == 0
+    assert _strength_armour_penalty(hard, 5) == 1
+
+
+def test_fencing_expertise_uses_the_current_canonical_name():
     sword_expert = _make_fighter(
         BASE_FIGHTER | {"skills": ["Experto en Esgrima"]}
     )
-    scimitar_expert = _make_fighter(
-        BASE_FIGHTER | {"skills": ["Experto en Esgrima (Cimitarra)"]}
-    )
     assert sword_expert[9] & SKILL_FENCER
-    assert scimitar_expert[9] & SKILL_FENCER
 
 
 def test_new_weapon_profiles_are_encoded():
@@ -325,7 +355,6 @@ def test_additional_armour_profiles_use_their_melee_saves():
     assert _armor_base_save("Cuero Endurecido") == 6
     assert _armor_base_save("Armadura de Placas") == 4
     assert _armor_base_save("Ropajes de Asesino Eshin") == 6
-    assert _armor_base_save("Capa de Dragón Marino") == 5
 
 
 def test_pistols_only_add_their_melee_attack_in_the_first_round():
@@ -400,10 +429,10 @@ def test_priority_and_whip_attacks_keep_their_own_weapon():
     assert not _weapon_attacks_first(WEAPON_SERPENT_WHIP)
 
 
-def test_sun_gauntlet_is_normalized_to_the_secondary_hand():
+def test_sun_gauntlet_is_only_encoded_in_the_secondary_hand():
     fighter = _make_fighter(BASE_FIGHTER | {"main_weapon": "Guantelete Solar"})
-    assert fighter[6] == WEAPON_DAGGER
-    assert fighter[7] == WEAPON_SUN_GAUNTLET
+    assert fighter[6] == WEAPON_SUN_GAUNTLET
+    assert fighter[7] == OFF_NONE
 
 
 def test_heavy_weapon_bonus_expires_unless_tireless():
@@ -417,9 +446,9 @@ def test_heavy_weapon_bonus_expires_unless_tireless():
 
 
 def test_weapon_materials_modify_combat_profile():
-    gromril = _make_fighter(BASE_FIGHTER | {"weapon_material": "Gromril"})
-    ithilmar = _make_fighter(BASE_FIGHTER | {"weapon_material": "Ithilmar"})
-    obsidian = _make_fighter(BASE_FIGHTER | {"weapon_material": "Obsidiana"})
+    gromril = _make_fighter(BASE_FIGHTER | {"main_weapon_material": "Gromril"})
+    ithilmar = _make_fighter(BASE_FIGHTER | {"main_weapon_material": "Ithilmar"})
+    obsidian = _make_fighter(BASE_FIGHTER | {"main_weapon_material": "Obsidiana"})
     assert _extra_armour_penalty(gromril, WEAPON_SWORD) == 1
     assert _combat_initiative(ithilmar) == BASE_FIGHTER["I"] + 1
     assert _attack_strength(obsidian, WEAPON_SWORD, False) == BASE_FIGHTER["F"] + 1
@@ -438,12 +467,27 @@ def test_offhand_material_only_affects_offhand_attacks():
 
 
 def test_preparations_modify_the_compact_profile():
-    crimson = _make_fighter(BASE_FIGHTER | {"preparation": "Sombra Carmesí"})
-    mandrake = _make_fighter(BASE_FIGHTER | {"preparation": "Raíz de Mandrágora"})
+    crimson = _make_fighter(BASE_FIGHTER | {"preparations": ["Sombra Carmesí"]})
+    mandrake = _make_fighter(BASE_FIGHTER | {"preparations": ["Raíz de Mandrágora"]})
     assert crimson[1] == BASE_FIGHTER["F"] + 1
     assert crimson[14] == PREPARATION_CRIMSON_SHADE
     assert mandrake[2] == BASE_FIGHTER["R"] + 1
     assert mandrake[14] == PREPARATION_MANDRAKE_ROOT
+
+
+def test_multiple_preparations_accumulate_compatible_effects():
+    combined = _make_fighter(BASE_FIGHTER | {
+        "preparations": [
+            "Sombra Carmesí", "Raíz de Mandrágora", "Lágrimas de Shallaya",
+            "Hongos Sombrero Loco", "Hongos Pirakabezas",
+        ],
+    })
+    assert combined[1] == BASE_FIGHTER["F"] + 1
+    assert combined[2] == BASE_FIGHTER["R"] + 1
+    assert combined[14] & PREPARATION_CRIMSON_SHADE
+    assert combined[14] & PREPARATION_MANDRAKE_ROOT
+    assert combined[14] & PREPARATION_MAD_CAP
+    assert combined[14] & PREPARATION_HEAD_SPLITTER
 
 
 def test_mushrooms_double_base_attacks_but_not_the_second_weapon():
@@ -451,11 +495,11 @@ def test_mushrooms_double_base_attacks_but_not_the_second_weapon():
         BASE_FIGHTER | {
             "A": 2,
             "off_hand": "Daga",
-            "preparation": "Hongos Sombrero Loco",
+            "preparations": ["Hongos Sombrero Loco"],
         }
     )
     headsplitta = _make_fighter(
-        BASE_FIGHTER | {"preparation": "Hongos Pirakabezas"}
+        BASE_FIGHTER | {"preparations": ["Hongos Pirakabezas"]}
     )
     assert dual[14] == PREPARATION_MAD_CAP
     assert headsplitta[14] == PREPARATION_HEAD_SPLITTER

@@ -13,6 +13,7 @@ import yaml
 
 from .rules import (
     ARMORS,
+    BODY_ARMORS,
     MAIN_HAND_FORBIDDEN_WEAPONS,
     OFF_HAND_OPTIONS,
     POISONS,
@@ -174,7 +175,7 @@ EQUIPMENT_ITEM_TO_OPTION = {
 
 SUPPORTED_EQUIPMENT_OPTIONS = frozenset({
     *(armor for armor in ARMORS if armor not in {"Sin Armadura", "Ropajes de Ninja"}),
-    "Casco", "Amuleto de la suerte",
+    "Casco", "Amuleto de la suerte", "Capa de Dragón Marino",
     *(value for value in PREPARATIONS if value != "Ninguno"),
     *(value for value in POISONS if value != "Sin veneno"),
 })
@@ -314,8 +315,6 @@ def _special_skill_allowed(skill: BandSkill, profile: dict) -> bool:
     for marker, allowed_names in explicit.items():
         if marker in text:
             return any(name in profile_name for name in allowed_names)
-    if skill.name == "Golpe Mortal":
-        return int((profile.get("characteristics") or {}).get("A", 0)) >= 2
     if skill.name == "Constitución fuerte" and "hechicera" in profile_name:
         return False
     return True
@@ -336,8 +335,6 @@ def _general_skill_allowed(name: str, band: dict, profile: dict) -> bool:
         return is_caster
     if name in {"Escriba", "Enfoque Mental"}:
         return is_caster or uses_prayers
-    if name == "Estocada Mortal":
-        return int((profile.get("characteristics") or {}).get("A", 0)) > 1
     if name == "Conocimientos Arcanos":
         forbidden = ("Cazadores de Brujas", "Hermanas de Sigmar")
         return str(band.get("name", "")) not in forbidden and not uses_prayers
@@ -361,7 +358,7 @@ def _build_profile(band, profile, equipment_lists, band_skills) -> CandidateProf
     # El yari puede usarse de ambas formas aunque la lista lo compre una sola vez.
     if "Yari (una mano)" in options or "Yari (dos manos)" in options:
         weapons = tuple(dict.fromkeys((*weapons, "Yari (una mano)", "Yari (dos manos)")))
-    armors = tuple(armor for armor in ARMORS if armor in options)
+    armors = tuple(armor for armor in BODY_ARMORS if armor in options)
     materials = ("Sin material", *(material for item, material in MATERIAL_ITEMS.items() if item in item_ids))
     materials = tuple(material for material in WEAPON_MATERIALS if material in materials)
 

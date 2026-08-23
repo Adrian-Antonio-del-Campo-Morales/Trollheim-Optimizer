@@ -24,12 +24,16 @@ echo [3/5] Checking PyInstaller and Tkinter...
 python -m PyInstaller --version >nul 2>&1
 if errorlevel 1 goto :pyinstaller_error
 
-python -c "import tkinter; tkinter.Tcl()" >nul 2>&1
+rem Crear una ventana real: tkinter.Tcl() puede funcionar aunque falten los
+rem scripts de Tk que necesita la aplicación y que PyInstaller debe incluir.
+python -c "import tkinter; root=tkinter.Tk(); root.withdraw(); root.destroy()" >nul 2>&1
 if errorlevel 1 (
     rem Este Python tiene Tcl de adorno. Inkscape suele traer una copia sana.
     if exist "C:\Program Files\Inkscape\lib\tcl8.6\init.tcl" (
         set "TCL_LIBRARY=C:\Program Files\Inkscape\lib\tcl8.6"
         set "TK_LIBRARY=C:\Program Files\Inkscape\lib\tk8.6"
+        python -c "import tkinter; root=tkinter.Tk(); root.withdraw(); root.destroy()" >nul 2>&1
+        if errorlevel 1 goto :tkinter_error
     ) else (
         goto :tkinter_error
     )

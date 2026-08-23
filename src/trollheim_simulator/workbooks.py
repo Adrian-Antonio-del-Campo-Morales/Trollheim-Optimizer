@@ -17,9 +17,11 @@ from .candidate_catalog import (
     load_bands,
     weapon_descriptions,
 )
+from .rules import HOUSE_RULES, POISON_DESCRIPTIONS, PREPARATION_DESCRIPTIONS
 
 
-FORMAT_MARKER = "TROLLHEIM_WORKBOOK_V2"
+FORMAT_VERSION = 3
+FORMAT_MARKER = "TROLLHEIM_WORKBOOK_V3"
 DATA_SHEET = "_Trollheim"
 SUMMARY_SHEET = "Candidato"
 ENEMIES_SHEET = "Enemigos"
@@ -37,6 +39,24 @@ THIN_GREY = Side(style="thin", color="D0D5DD")
 
 class CandidateWorkbookError(ValueError):
     pass
+
+
+def _configured_equipment(config: dict) -> list[str]:
+    result = []
+    if config.get("has_helmet"):
+        result.append("Casco")
+    if config.get("has_luck_amulet"):
+        result.append("Amuleto de la suerte")
+    if config.get("has_sea_dragon_cloak"):
+        result.append("Capa de Dragón Marino")
+    result.extend(config.get("preparations", ()))
+    for poison in (
+        config.get("main_poison", "Sin veneno"),
+        config.get("offhand_poison", "Sin veneno"),
+    ):
+        if poison != "Sin veneno" and poison not in result:
+            result.append(poison)
+    return result
 
 
 def _section(ws, row: int, title: str, end_column: int = 8) -> int:
@@ -83,13 +103,7 @@ def _attributes(ws, row: int, config: dict) -> int:
     return row + 3
 
 
-def _safe_sheet_remove(workbook, title: str) -> None:
-    if title in workbook.sheetnames:
-        del workbook[title]
-
-
 def _build_summary(workbook, payload: dict) -> None:
-    _safe_sheet_remove(workbook, SUMMARY_SHEET)
     ws = workbook.create_sheet(SUMMARY_SHEET, 0)
     ws.sheet_view.showGridLines = False
     ws.freeze_panes = "A5"
@@ -114,6 +128,19 @@ def _build_summary(workbook, payload: dict) -> None:
     _label_value(ws, row, "Tipo", metadata.get("profile_type", "—"), 5)
     row += 2
 
+    selected_house_rules = [
+        HOUSE_RULES[key]
+        for key, enabled in (payload.get("house_rules") or {}).items()
+        if enabled and key in HOUSE_RULES
+    ]
+    if selected_house_rules:
+        row = _section(ws, row, "REGLAS DE LA CASA ACTIVAS")
+        for rule in selected_house_rules:
+            _label_value(ws, row, rule["name"], rule["description"], 1)
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
+            row += 1
+        row += 1
+
     row = _section(ws, row, "ATRIBUTOS")
     row = _attributes(ws, row, config)
 
@@ -125,7 +152,7 @@ def _build_summary(workbook, payload: dict) -> None:
     _label_value(ws, row, "Material", config.get("offhand_material"), 5)
     row += 1
     _label_value(ws, row, "Armadura", config.get("armor"), 1)
-    _label_value(ws, row, "Casco", "Sí" if config.get("has_helmet") else "No", 5)
+    _label_value(ws, row, "Equipamiento", ", ".join(_configured_equipment(config)) or "Ninguno", 5)
     row += 1
     _label_value(ws, row, "Habilidades", ", ".join(config.get("skills", ())) or "Ninguna", 1)
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
@@ -146,6 +173,16 @@ def _build_summary(workbook, payload: dict) -> None:
         description = descriptions.get(item, "")
         if item and item not in ("Ninguna", "Sin Armadura") and description:
             quick_rows.append((f"{label}: {item}", description))
+    equipment_notes = {
+        **armour_notes,
+        **PREPARATION_DESCRIPTIONS,
+        **POISON_DESCRIPTIONS,
+    }
+    quick_rows.extend(
+        (f"Equipamiento: {item}", equipment_notes.get(item, ""))
+        for item in _configured_equipment(config)
+        if equipment_notes.get(item)
+    )
     quick_rows.extend(
         (f"Habilidad: {skill}", skill_notes.get(skill, "Sin descripción canónica breve."))
         for skill in config.get("skills", ())
@@ -187,6 +224,11 @@ def _build_summary(workbook, payload: dict) -> None:
 
 def _enemy_quick_rows(config):
     notes = weapon_descriptions()
+    equipment_notes = {
+        **armour_descriptions(),
+        **PREPARATION_DESCRIPTIONS,
+        **POISON_DESCRIPTIONS,
+    }
     skill_notes = dict(GENERAL_SKILL_DESCRIPTIONS)
     for band in load_bands():
         skill_notes.update((skill.name, skill.description) for skill in band.skills)
@@ -196,6 +238,11 @@ def _enemy_quick_rows(config):
         if item and item != "Ninguna" and notes.get(item):
             rows.append((f"{label}: {item}", notes[item]))
     rows.extend(
+        (f"Equipamiento: {item}", equipment_notes.get(item, ""))
+        for item in _configured_equipment(config)
+        if equipment_notes.get(item)
+    )
+    rows.extend(
         (f"Habilidad: {skill}", skill_notes.get(skill, "Sin descripción canónica breve."))
         for skill in config.get("skills", ())
     )
@@ -203,7 +250,6 @@ def _enemy_quick_rows(config):
 
 
 def _build_enemies(workbook, payload):
-    _safe_sheet_remove(workbook, ENEMIES_SHEET)
     ws = workbook.create_sheet(ENEMIES_SHEET, 1)
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:H2")
@@ -241,7 +287,7 @@ def _build_enemies(workbook, payload):
             _label_value(ws, row, "Mano secundaria", config.get("off_hand"), 5)
             row += 1
             _label_value(ws, row, "Armadura", config.get("armor"), 1)
-            _label_value(ws, row, "Casco", "Sí" if config.get("has_helmet") else "No", 5)
+            _label_value(ws, row, "Equipamiento", ", ".join(_configured_equipment(config)) or "Ninguno", 5)
             row += 1
             _label_value(ws, row, "Habilidades", ", ".join(config.get("skills", ())) or "Ninguna", 1)
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=8)
@@ -319,10 +365,6 @@ def _build_result_sheet(workbook, result: dict, sheet_name: str) -> None:
 
 
 def _build_results(workbook, results) -> None:
-    for title in tuple(workbook.sheetnames):
-        if title.startswith(RESULT_SHEET_PREFIX):
-            del workbook[title]
-    _safe_sheet_remove(workbook, RESULTS_INDEX_SHEET)
     ws = workbook.create_sheet(RESULTS_INDEX_SHEET)
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:F2")
@@ -357,18 +399,21 @@ def _build_results(workbook, results) -> None:
 
 def save_candidate_workbook(path, payload: dict) -> Path:
     destination = Path(path)
-    workbook = load_workbook(destination) if destination.exists() else Workbook()
-    if "Sheet" in workbook.sheetnames and len(workbook.sheetnames) == 1:
-        del workbook["Sheet"]
+    workbook = Workbook()
+    del workbook["Sheet"]
+    payload = {
+        **payload,
+        "format_version": FORMAT_VERSION,
+        "results": list(payload.get("results", ())),
+    }
     _build_summary(workbook, payload)
     _build_enemies(workbook, payload)
     _build_results(workbook, payload.get("results", ()))
-    _safe_sheet_remove(workbook, DATA_SHEET)
     data = workbook.create_sheet(DATA_SHEET)
     data.sheet_state = "veryHidden"
     data["A1"] = FORMAT_MARKER
     data["A2"] = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    data["A3"] = 2
+    data["A3"] = FORMAT_VERSION
     workbook.calculation.fullCalcOnLoad = True
     workbook.calculation.forceFullCalc = True
     workbook.calculation.calcMode = "auto"
@@ -382,13 +427,17 @@ def load_candidate_workbook(path) -> dict:
     if DATA_SHEET not in workbook.sheetnames:
         raise CandidateWorkbookError("El libro no contiene una ficha de Trollheim.")
     data = workbook[DATA_SHEET]
-    if data["A1"].value != FORMAT_MARKER:
+    if data["A1"].value != FORMAT_MARKER or data["A3"].value != FORMAT_VERSION:
         raise CandidateWorkbookError("La versión de esta ficha no es compatible.")
     try:
         payload = json.loads(data["A2"].value)
     except (TypeError, json.JSONDecodeError) as exc:
         raise CandidateWorkbookError("Los datos internos de la ficha están dañados.") from exc
-    if not isinstance(payload, dict) or not isinstance(payload.get("config"), dict):
+    if (
+        not isinstance(payload, dict)
+        or payload.get("format_version") != FORMAT_VERSION
+        or not isinstance(payload.get("config"), dict)
+    ):
         raise CandidateWorkbookError("La ficha no contiene un candidato válido.")
     enemies = payload.get("enemies")
     if (
@@ -397,4 +446,12 @@ def load_candidate_workbook(path) -> dict:
         or not isinstance(enemies.get("profiles"), list)
     ):
         raise CandidateWorkbookError("El libro no contiene una configuración de enemigos válida.")
+    results = payload.get("results")
+    if not isinstance(results, list) or any(
+        not isinstance(result, dict)
+        or result.get("format_version") != FORMAT_VERSION
+        or result.get("target") not in {"combos", "weapons", "equipment"}
+        for result in results
+    ):
+        raise CandidateWorkbookError("El libro no contiene resultados del formato actual.")
     return payload
