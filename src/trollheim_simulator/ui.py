@@ -1,6 +1,7 @@
 """Interfaz gráfica Tkinter del simulador."""
 
 import os
+import math
 import queue
 import random
 import re
@@ -29,6 +30,7 @@ from .candidate_catalog import (
     GENERAL_SKILL_CATEGORIES,
     GENERAL_SKILL_DESCRIPTIONS,
     armour_descriptions,
+    equipment_costs_for_profile,
     find_profile,
     load_bands,
     usable_main_weapons,
@@ -52,6 +54,8 @@ DEFAULT_COMBO_SIMULATIONS = 10_000
 PROGRESS_POLL_MS = 100
 PROGRESS_ANIMATION_MS = 60
 TASK_GROUP_SIZE = 2
+MOTTA_CONSTANT = 507.4
+MOTTA_COST_FLOOR = 0.01
 
 
 def _configure_simulation_worker():
@@ -81,15 +85,18 @@ class ToolTip:
         self.widget = widget
         self.text = text
         self.tip_window = None
+        self.widget._tooltip_attached = True
 
         self.widget.bind(
             "<Enter>",
             self.show_tip,
+            add="+",
         )
 
         self.widget.bind(
             "<Leave>",
             self.hide_tip,
+            add="+",
         )
 
     def show_tip(
@@ -100,11 +107,11 @@ class ToolTip:
         if self.tip_window or not text:
             return
 
-        x, y, _cx, cy = (
-            self.widget.bbox("insert")
-            if self.widget.bbox("insert")
-            else (0, 0, 0, 0)
-        )
+        try:
+            box = self.widget.bbox("insert")
+        except (AttributeError, tk.TclError):
+            box = None
+        x, y, _cx, cy = box or (0, 0, 0, 0)
 
         x = (
             x
@@ -152,6 +159,93 @@ class ToolTip:
         self.tip_window = None
         if tw:
             tw.destroy()
+
+
+class TreeviewToolTip:
+    """Ayuda contextual para cabeceras y celdas, con fila resaltada."""
+
+    def __init__(self, tree, explanations=None, rule_resolver=None):
+        self.tree = tree
+        self.explanations = explanations or {}
+        self.rule_resolver = rule_resolver
+        self.tip_window = None
+        self.tip_label = None
+        self.last_target = None
+        self.hover_item = None
+        tree._tooltip_attached = True
+        tree.tag_configure("__hover_help__", background="#eaf3ff")
+        tree.bind("<Motion>", self._motion, add="+")
+        tree.bind("<Leave>", self._leave, add="+")
+
+    def _column(self, x):
+        token = self.tree.identify_column(x)
+        if not token or token == "#0":
+            return None
+        index = int(token[1:]) - 1
+        displayed = self.tree.cget("displaycolumns")
+        columns = (
+            tuple(self.tree.cget("columns"))
+            if displayed == "#all" else tuple(displayed)
+        )
+        return columns[index] if 0 <= index < len(columns) else None
+
+    def _motion(self, event):
+        region = self.tree.identify_region(event.x, event.y)
+        column = self._column(event.x)
+        item = self.tree.identify_row(event.y) if region in ("cell", "tree") else ""
+        self._highlight(item)
+        if region == "heading" and column:
+            title = self.tree.heading(column).get("text", column)
+            text = self.explanations.get(column, f"Pulsa para ordenar por «{title}».")
+            target = ("heading", column)
+        elif item and column:
+            title = self.tree.heading(column).get("text", column)
+            value = self.tree.set(item, column) or "Sin valor para esta configuración"
+            detail = self.explanations.get(column, "")
+            rule_detail = self.rule_resolver(value) if self.rule_resolver else ""
+            useful_detail = rule_detail or detail
+            text = f"{title}: {value}" + (f"\n{useful_detail}" if useful_detail else "")
+            target = (item, column)
+        else:
+            self._hide()
+            return
+        if target != self.last_target:
+            self._show(text, event.x_root + 16, event.y_root + 18)
+            self.last_target = target
+
+    def _highlight(self, item):
+        if item == self.hover_item:
+            return
+        if self.hover_item and self.tree.exists(self.hover_item):
+            tags = tuple(t for t in self.tree.item(self.hover_item, "tags") if t != "__hover_help__")
+            self.tree.item(self.hover_item, tags=tags)
+        self.hover_item = item
+        if item:
+            tags = tuple(self.tree.item(item, "tags"))
+            if "__hover_help__" not in tags:
+                self.tree.item(item, tags=(*tags, "__hover_help__"))
+
+    def _show(self, text, x, y):
+        self._hide()
+        self.tip_window = tw = tk.Toplevel(self.tree)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        self.tip_label = tk.Label(
+            tw, text=text, justify=tk.LEFT, background="#ffffe0",
+            relief=tk.SOLID, borderwidth=1, font=("tahoma", 8), wraplength=460,
+        )
+        self.tip_label.pack(ipadx=4, ipady=2)
+
+    def _hide(self):
+        if self.tip_window:
+            self.tip_window.destroy()
+        self.tip_window = None
+        self.tip_label = None
+        self.last_target = None
+
+    def _leave(self, _event=None):
+        self._highlight("")
+        self._hide()
 
 
 # Editor de guerreros
@@ -1069,6 +1163,14 @@ class TrollheimApp(tk.Tk):
             weapon: tk.BooleanVar(value=weapon in common_weapons)
             for weapon in WEAPONS_ALL
         }
+        self.weapon_material_vars = {
+            material: tk.BooleanVar(value=material == "Sin material")
+            for material in WEAPON_MATERIALS
+        }
+        self.weapon_defense_vars = {
+            defense: tk.BooleanVar(value=defense == "Escudo")
+            for defense in ("Escudo", "Rodela")
+        }
         self.candidate_name = tk.StringVar(value="Candidato")
         self.candidate_band_id = tk.StringVar(value="")
         self.candidate_profile_id = tk.StringVar(value="")
@@ -1116,7 +1218,132 @@ class TrollheimApp(tk.Tk):
             if key == requested_key:
                 self._built_tabs.add(key)
                 builder(tab)
+                self._install_context_help(tab)
+                self.after_idle(lambda current_tab=tab: self._install_context_help(current_tab))
                 return
+
+    def _install_context_help(self, root):
+        """Añade ayuda básica a los controles que no tengan una específica."""
+        for widget in (root, *self._widget_descendants(root)):
+            if getattr(widget, "_tooltip_attached", False):
+                continue
+            if isinstance(widget, ttk.Treeview):
+                TreeviewToolTip(
+                    widget, self._tree_help_explanations(),
+                    self._rule_tooltip_for_value,
+                )
+                continue
+            text = ""
+            try:
+                text = str(widget.cget("text")).strip()
+            except (tk.TclError, AttributeError):
+                pass
+            help_text = None
+            if isinstance(widget, (ttk.Button, tk.Button)):
+                help_text = f"Ejecuta la acción «{text}»."
+            elif isinstance(widget, (ttk.Menubutton, tk.Menubutton)):
+                help_text = f"Abre las opciones de «{text.rstrip(' ▾')}»."
+            elif isinstance(widget, ttk.Combobox):
+                help_text = lambda control=widget: (
+                    f"Selección actual: {control.get() or 'ninguna'}. Abre la lista para cambiarla."
+                )
+            elif isinstance(widget, (ttk.Entry, tk.Entry)):
+                help_text = "Campo editable. Haz clic para introducir o modificar el valor."
+            elif isinstance(widget, (ttk.Checkbutton, tk.Checkbutton)):
+                help_text = f"Activa o desactiva «{text}»."
+            elif isinstance(widget, (ttk.Radiobutton, tk.Radiobutton)):
+                help_text = f"Selecciona la opción «{text}»."
+            elif isinstance(widget, ttk.Progressbar):
+                help_text = "Muestra el progreso de la operación en curso."
+            elif isinstance(widget, ttk.Notebook):
+                help_text = "Selecciona una pestaña para cambiar de sección."
+            elif isinstance(widget, (ttk.Label, tk.Label)):
+                if text:
+                    help_text = text
+                else:
+                    try:
+                        variable_name = widget.cget("textvariable")
+                    except tk.TclError:
+                        variable_name = ""
+                    if variable_name:
+                        help_text = lambda control=widget, name=variable_name: str(
+                            control.getvar(name)
+                        )
+            if help_text:
+                ToolTip(widget, help_text)
+
+    @staticmethod
+    def _widget_descendants(root):
+        descendants = []
+        pending = list(root.winfo_children())
+        while pending:
+            widget = pending.pop(0)
+            descendants.append(widget)
+            pending.extend(widget.winfo_children())
+        return descendants
+
+    @staticmethod
+    def _tree_help_explanations():
+        return {
+            "Optimal": (
+                "Mejor porcentaje de victoria de los modos aplicables; entre "
+                "paréntesis figura la mejora respecto al estado base. La estrella "
+                "marca el mayor porcentaje de victoria de toda la tabla."
+            ),
+            "Motta": (
+                "Eficiencia coste/mejora: 507,4 × mejora / "
+                "√(coste² + 0,01²). La regularización hace que los costes próximos "
+                "a cero produzcan valores grandes pero finitos, conserva el signo "
+                "y una mejora nula vale 0. La estrella marca el mejor índice MOTTA."
+            ),
+            "Cost": "Desglose del coste de ambas manos. La ordenación usa la suma total.",
+            "Main": "Arma de la mano principal, incluido su material cuando corresponda.",
+            "Off": "Arma secundaria, escudo, rodela o mano libre.",
+        }
+
+    def _rule_tooltip_for_value(self, value):
+        """Busca las reglas de los objetos o habilidades escritos en una celda."""
+        text = str(value).replace("★", "").strip()
+        if not text or re.search(r"\d+(?:[.,]\d+)?%", text):
+            return ""
+        descriptions = {}
+        descriptions.update(weapon_descriptions())
+        descriptions.update(armour_descriptions())
+        descriptions.update(GENERAL_SKILL_DESCRIPTIONS)
+        descriptions.update(SKILL_DESCRIPTIONS)
+        descriptions.update(PREPARATION_DESCRIPTIONS)
+        descriptions.update(POISON_DESCRIPTIONS)
+        for band in self._candidate_bands:
+            descriptions.update(
+                (skill.name, skill.description) for skill in band.skills
+            )
+        descriptions.update({
+            "Escudo": "Mejora en 1 la tirada de salvación por armadura.",
+            "Rodela": "Permite parar; con una espada puede repetir una parada fallida.",
+            "Casco": "Protege frente a determinados resultados de heridas y aturdimiento.",
+            "Amuleto de la suerte": "Permite anular el primer impacto sufrido según sus reglas.",
+            "Ninguna": "La mano está vacía.",
+            "Sin armas": "Combate desarmado: -1 Fuerza y el rival mejora su salvación en 1.",
+        })
+        normalized = re.sub(
+            r"\s+\((?:Sin material|Normal|Gromril|Ithilmar|Obsidiana|Acero Oscuro)\)",
+            "", text,
+        )
+        if normalized in descriptions:
+            return descriptions[normalized]
+        matches = [
+            (name, description) for name, description in descriptions.items()
+            if name not in {"Ninguna"} and name in normalized
+        ]
+        matches.sort(key=lambda pair: len(pair[0]), reverse=True)
+        seen = set()
+        lines = []
+        for name, description in matches:
+            if name in seen or any(name in selected for selected in seen):
+                continue
+            seen.add(name)
+            lines.append(f"{name}: {description}")
+        return "\n".join(lines[:3])
 
     def _on_tab_changed(self, _event=None):
         if self._tab_transitioning:
@@ -1378,14 +1605,20 @@ class TrollheimApp(tk.Tk):
 
     @staticmethod
     def _result_export_rows(target, table_data):
-        data, equipment = table_data
+        data, equipment, *extra = table_data
+        loadout_costs = extra[0] if target == "weapons" and extra else {}
         label_headers = {
             "results": ("Mejora",), "combos": ("Mejora 1", "Mejora 2"),
             "weapons": ("Arma principal", "Mano secundaria"),
             "equipment": ("Objeto 1", "Objeto 2", "Objeto 3"),
         }[target]
-        headers = (*label_headers, *(f"{title} %" for _mode, title in COMBAT_MODES),
-                   *(f"Impacto {title} %" for _mode, title in COMBAT_MODES), "Mejor modo", "Equipo óptimo")
+        value_headers = (
+            *(f"{title} %" for _mode, title in COMBAT_MODES),
+            *(f"Impacto {title} %" for _mode, title in COMBAT_MODES),
+        )
+        if target == "weapons":
+            value_headers = (*value_headers, "Coste", "Índice MOTTA")
+        headers = (*label_headers, *value_headers, "Mejor modo", "Equipo óptimo")
         rows_by_label = {}
         base_rates = {}
         for mode, mode_data in data.items():
@@ -1420,7 +1653,20 @@ class TrollheimApp(tk.Tk):
                 available[mode][1] if mode in available else None
                 for mode, _title in COMBAT_MODES
             )
-            rows.append((*parts, *rates, *impacts, best_mode, equipment.get(best_mode, "—")))
+            extra_values = ()
+            if target == "weapons" and label != "ESTADO BASE":
+                main_cost, off_cost = loadout_costs.get(label, (None, None))
+                _display, total_cost = TrollheimApp._weapon_cost_display(main_cost, off_cost)
+                motta = TrollheimApp._motta_index(
+                    available[best_mode][1], total_cost
+                )
+                extra_values = (total_cost, motta)
+            elif target == "weapons":
+                extra_values = (None, None)
+            rows.append((
+                *parts, *rates, *impacts, *extra_values,
+                best_mode, equipment.get(best_mode, "—"),
+            ))
         return headers, rows
 
     def _save_candidate(self):
@@ -1775,6 +2021,7 @@ class TrollheimApp(tk.Tk):
         self.enemy_editor.pack(fill="both", expand=True)
         self.enemy_config = self.enemy_editor.config  # Compatibilidad con controles comunes.
         self.enemy_editor.set_enabled(self.enemy_mode.get() == "custom")
+        self._install_context_help(page)
 
     def _enemy_tab_changed(self, _event=None):
         self._materialize_selected_enemy()
@@ -1808,6 +2055,21 @@ class TrollheimApp(tk.Tk):
         for index, (_, item) in enumerate(rows):
             tree.move(item, "", index)
         tree.heading(column, command=lambda: self._sort_treeview(tree, column, not descending))
+
+    def _sort_weapon_cost(self, descending=False):
+        rows = [
+            (self.weapon_tree.set(item, "CostTotal"), item)
+            for item in self.weapon_tree.get_children("")
+        ]
+        rows.sort(
+            key=lambda row: self._tree_sort_key(row[0]), reverse=descending
+        )
+        for index, (_value, item) in enumerate(rows):
+            self.weapon_tree.move(item, "", index)
+        self.weapon_tree.heading(
+            "Cost",
+            command=lambda: self._sort_weapon_cost(not descending),
+        )
 
     @staticmethod
     def _tree_sort_key(value):
@@ -2033,6 +2295,10 @@ class TrollheimApp(tk.Tk):
             tree, view_var = self.weapon_tree, self.weapon_view
             visible, fixed = self.weapon_visible_modes, ("Main", "Off")
 
+        if target == "weapons":
+            tree.configure(displaycolumns=("Main", "Off", "Optimal", "Motta", "Cost"))
+            return
+
         if view_var.get() == "optimal":
             optimal_columns = (*fixed, "Optimal")
             if target != "weapons":
@@ -2068,9 +2334,9 @@ class TrollheimApp(tk.Tk):
             cards, renderer = self.equipment_cards, self._render_equipment_table
         else:
             table_name, cards_name = "_weapon_table_data", "_weapon_card_data"
-            cards, renderer = self.weapon_cards, self._render_weapon_table
+            cards, renderer = None, self._render_weapon_table
         card_data = getattr(self, cards_name, None)
-        if card_data:
+        if card_data and cards is not None:
             base_rates, user_mode_key, equipment = card_data
             self._update_mode_cards(cards, base_rates, user_mode_key, equipment)
         self._apply_result_view(target)
@@ -2318,6 +2584,42 @@ class TrollheimApp(tk.Tk):
 
     def setup_tab_weapons(self, tab):
 
+        profile = find_profile(
+            self.candidate_band_id.get(), self.candidate_profile_id.get()
+        )
+        allowed_weapons = set(profile.weapons if profile else WEAPONS_ALL)
+        allowed_materials = set(profile.materials if profile else WEAPON_MATERIALS)
+        allowed_defenses = set(profile.defenses if profile else ("Escudo", "Rodela"))
+        self._weapon_filter_allowed = allowed_weapons
+        self._weapon_material_allowed = allowed_materials
+        self._weapon_defense_allowed = allowed_defenses
+        for weapon, variable in self.weapon_item_vars.items():
+            if weapon not in allowed_weapons:
+                variable.set(False)
+        for material, variable in self.weapon_material_vars.items():
+            if material not in allowed_materials:
+                variable.set(False)
+        for defense, variable in self.weapon_defense_vars.items():
+            if defense not in allowed_defenses:
+                variable.set(False)
+        if profile:
+            for value in allowed_weapons:
+                self.weapon_item_vars[value].set(True)
+            for value in allowed_materials:
+                self.weapon_material_vars[value].set(True)
+            for value in allowed_defenses:
+                self.weapon_defense_vars[value].set(True)
+        if allowed_weapons and not any(
+            self.weapon_item_vars[value].get() for value in allowed_weapons
+        ):
+            first_weapon = next(
+                (value for value in WEAPONS_ALL if value in allowed_weapons), None
+            )
+            if first_weapon:
+                self.weapon_item_vars[first_weapon].set(True)
+        if not any(self.weapon_material_vars[value].get() for value in allowed_materials):
+            self.weapon_material_vars["Sin material"].set(True)
+
         controls = ttk.Frame(tab)
         controls.pack(pady=7)
         ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
@@ -2331,27 +2633,34 @@ class TrollheimApp(tk.Tk):
         )
         self.btn_weapons_run.pack(side="left")
 
-        self.weapon_filter_button = ttk.Menubutton(
-            controls, text="Armas incluidas ▾"
+        filter_bar = ttk.Frame(tab)
+        filter_bar.pack(fill="x", padx=20, pady=(2, 4))
+        ttk.Label(filter_bar, text="Comparar:", font=("Arial", 9, "bold")).pack(side="left", padx=(0, 6))
+        self._build_weapon_filter_menu(
+            filter_bar, "Armas generales", WEAPONS_GENERAL, allowed_weapons
         )
-        self.weapon_filter_button.pack(side="left", padx=(10, 0))
-        weapon_menu = tk.Menu(self.weapon_filter_button, tearoff=False)
-        for weapon, variable in self.weapon_item_vars.items():
-            weapon_menu.add_checkbutton(label=weapon, variable=variable)
-        weapon_menu.add_separator()
-        weapon_menu.add_command(
-            label="Marcar todas", command=lambda: self._set_weapon_filters(True)
+        self._build_weapon_filter_menu(
+            filter_bar, "Armas especiales", WEAPONS_EXCLUSIVE, allowed_weapons
         )
-        weapon_menu.add_command(
-            label="Desmarcar todas", command=lambda: self._set_weapon_filters(False)
+        self._build_named_filter_menu(
+            filter_bar, "Materiales", self.weapon_material_vars, WEAPON_MATERIALS,
+            allowed_materials,
         )
-        self.weapon_filter_button.config(menu=weapon_menu)
+        self._build_named_filter_menu(
+            filter_bar, "Defensas", self.weapon_defense_vars, ("Escudo", "Rodela"),
+            allowed_defenses,
+        )
+        origin = (
+            f"Opciones disponibles para {profile.name} ({profile.band_name})."
+            if profile else "Selección libre: todas las opciones del simulador."
+        )
+        ttk.Label(filter_bar, text=origin, font=("Arial", 8, "italic")).pack(side="left", padx=(10, 0))
 
         ttk.Label(
             tab,
             text=(
-                "Compara cada arma sola, con escudo, en parejas legales y las "
-                "armas que ocupan ambas manos."
+                "Compara cada arma sola, con escudo o rodela, en parejas legales y las "
+                "armas que ocupan ambas manos, usando solo el equipo disponible."
             ),
             font=("Arial", 8, "italic"),
         ).pack(pady=(0, 3))
@@ -2366,25 +2675,12 @@ class TrollheimApp(tk.Tk):
         )
         self.weapon_status_label.pack(pady=2)
 
-        view_controls = ttk.Frame(tab)
-        view_controls.pack(pady=(3, 0))
-        ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        ttk.Radiobutton(
-            view_controls, text="Por equipo", variable=self.weapon_view,
-            value="equipment", command=lambda: self._change_result_view("weapons"),
-        ).pack(side="left", padx=3)
-        ttk.Radiobutton(
-            view_controls, text="Óptima", variable=self.weapon_view,
-            value="optimal", command=lambda: self._change_result_view("weapons"),
-        ).pack(side="left", padx=3)
-
-        self.weapon_cards = self._create_mode_cards(tab, "weapons")
         weapon_table = ttk.Frame(tab)
         self.weapon_tree = ttk.Treeview(
             weapon_table,
             columns=(
                 "Main", "Off", "Single", "Shield", "Dual", "TwoHand",
-                "Optimal", "Equipment",
+                "Optimal", "Motta", "Cost", "CostTotal", "Equipment",
             ),
             show="headings",
         )
@@ -2396,6 +2692,9 @@ class TrollheimApp(tk.Tk):
             ("Dual", "Dos armas"),
             ("TwoHand", "Dos manos"),
             ("Optimal", "Mejor resultado"),
+            ("Motta", "Índice MOTTA"),
+            ("Cost", "Coste"),
+            ("CostTotal", "Coste total"),
             ("Equipment", "Equipo utilizado"),
         ])
         self.weapon_tree.column("Main", width=230)
@@ -2403,12 +2702,47 @@ class TrollheimApp(tk.Tk):
         for mode, _title in COMBAT_MODES:
             self.weapon_tree.column(mode, width=150, anchor="center")
         self.weapon_tree.column("Optimal", width=180, anchor="center")
+        self.weapon_tree.column("Cost", width=150, anchor="center")
+        self.weapon_tree.column("Motta", width=130, anchor="center")
+        self.weapon_tree.column("CostTotal", width=0, minwidth=0, stretch=False)
         self.weapon_tree.column("Equipment", width=220, anchor="center")
         self.weapon_tree.configure(
-            displaycolumns=("Main", "Off", "Single", "Shield", "Dual", "TwoHand")
+            displaycolumns=("Main", "Off", "Optimal", "Motta", "Cost")
+        )
+        self.weapon_tree.heading(
+            "Cost", text="Coste", anchor="center",
+            command=lambda: self._sort_weapon_cost(False),
         )
         self._pack_scrollable_tree(self.weapon_tree, pady=(6, 10))
         self._restore_simulation_tab("weapons")
+
+    def _build_weapon_filter_menu(self, parent, title, ordered, allowed):
+        return self._build_named_filter_menu(
+            parent, title, self.weapon_item_vars, ordered, allowed
+        )
+
+    def _build_named_filter_menu(self, parent, title, variables, ordered, allowed):
+        button = ttk.Menubutton(parent, text=f"{title} ▾")
+        button.pack(side="left", padx=3)
+        menu = tk.Menu(button, tearoff=False)
+        available = [value for value in ordered if value in allowed]
+        if available:
+            for value in available:
+                menu.add_checkbutton(label=value, variable=variables[value])
+            menu.add_separator()
+            menu.add_command(
+                label="Marcar todas",
+                command=lambda values=tuple(available): self._set_named_filters(variables, values, True),
+            )
+            menu.add_command(
+                label="Desmarcar todas",
+                command=lambda values=tuple(available): self._set_named_filters(variables, values, False),
+            )
+        else:
+            menu.add_command(label="No disponible para este guerrero", state="disabled")
+            button.config(state="disabled")
+        button.config(menu=menu)
+        return button
 
     def setup_tab_combos(self, tab):
 
@@ -2677,18 +3011,41 @@ class TrollheimApp(tk.Tk):
         return loadouts
 
     def _set_weapon_filters(self, selected):
-        for variable in self.weapon_item_vars.values():
-            variable.set(selected)
+        self._set_named_filters(
+            self.weapon_item_vars,
+            getattr(self, "_weapon_filter_allowed", self.weapon_item_vars),
+            selected,
+        )
+
+    @staticmethod
+    def _set_named_filters(variables, values, selected):
+        for value in values:
+            variables[value].set(selected)
 
     def _selected_weapons(self):
         return [
             weapon for weapon, variable in self.weapon_item_vars.items()
             if variable.get()
+            and weapon in getattr(self, "_weapon_filter_allowed", self.weapon_item_vars)
+        ]
+
+    def _selected_weapon_materials(self):
+        return [
+            material for material, variable in self.weapon_material_vars.items()
+            if variable.get()
+            and material in getattr(self, "_weapon_material_allowed", self.weapon_material_vars)
+        ]
+
+    def _selected_weapon_defenses(self):
+        return [
+            defense for defense, variable in self.weapon_defense_vars.items()
+            if variable.get()
+            and defense in getattr(self, "_weapon_defense_allowed", self.weapon_defense_vars)
         ]
 
     @staticmethod
-    def _weapon_loadouts(weapons):
-        loadouts = []
+    def _weapon_loadouts(weapons, defenses=("Escudo",)):
+        loadouts = [("Single", "Ninguna", "Ninguna")]
         one_handed = [
             weapon for weapon in weapons
             if weapon not in TWO_HANDED_WEAPONS and weapon not in PAIRED_WEAPONS
@@ -2700,7 +3057,12 @@ class TrollheimApp(tk.Tk):
         ]
         for weapon in main_hand:
             loadouts.append(("Single", weapon, "Ninguna"))
-            loadouts.append(("Shield", weapon, "Escudo"))
+            for defense in defenses:
+                if weapon in {"Mangual", "Arma natural"}:
+                    continue
+                if weapon in {"Rebanadora", "Pinchagarrapatos"} and defense != "Escudo":
+                    continue
+                loadouts.append(("Shield", weapon, defense))
         for main in main_hand:
             if main == "Mangual":
                 continue
@@ -2716,6 +3078,115 @@ class TrollheimApp(tk.Tk):
             if weapon in TWO_HANDED_WEAPONS or weapon in PAIRED_WEAPONS:
                 loadouts.append(("TwoHand", weapon, "Ninguna"))
         return loadouts
+
+    @staticmethod
+    def _materialized_weapon_loadouts(weapons, materials, defenses):
+        """Amplía configuraciones legales con los materiales de cada arma."""
+        loadouts = []
+        for mode, main, off in TrollheimApp._weapon_loadouts(weapons, defenses):
+            main_materials = materials if main in WEAPONS_ALL else ("Sin material",)
+            off_materials = materials if off in WEAPONS_ALL else ("Sin material",)
+            for main_material in main_materials:
+                for off_material in off_materials:
+                    loadouts.append((
+                        mode, main, off, main_material, off_material,
+                    ))
+        return loadouts
+
+    @staticmethod
+    def _weapon_with_material(weapon, material):
+        if weapon in ("Ninguna", "Escudo", "Rodela"):
+            return weapon
+        if material in ("Sin material", "Normal"):
+            return weapon
+        return f"{weapon} ({material})"
+
+    @staticmethod
+    def _weapon_loadout_label(main, off, main_material, off_material):
+        if main == "Ninguna" and off == "Ninguna":
+            return "Sin armas || Ninguna"
+        return (
+            f"{TrollheimApp._weapon_with_material(main, main_material)} || "
+            f"{TrollheimApp._weapon_with_material(off, off_material)}"
+        )
+
+    @staticmethod
+    def _weapon_cost(weapon, material, costs):
+        if weapon == "Ninguna":
+            return 0.0
+        base_cost = costs.get(weapon)
+        if base_cost is None:
+            return None
+        multiplier = {
+            "Sin material": 1.0,
+            "Normal": 1.0,
+            "Gromril": 4.0,
+            "Ithilmar": 3.0,
+            "Obsidiana": 5.0,
+            "Acero Oscuro": 3.0,
+        }.get(material, 1.0)
+        return base_cost * multiplier
+
+    @staticmethod
+    def _weapon_cost_display(main_cost, off_cost, show_off=None):
+        if main_cost is None or off_cost is None:
+            return "Coste no disponible", None
+        total = main_cost + off_cost
+        number = lambda value: f"{value:g}"
+        include_offhand = bool(off_cost) if show_off is None else show_off
+        if include_offhand:
+            return f"{number(main_cost)} + {number(off_cost)} = {number(total)} co", total
+        return f"{number(main_cost)} co", total
+
+    @staticmethod
+    def _motta_index(improvement, total_cost):
+        if total_cost is None:
+            return None
+        regularized_cost = math.hypot(total_cost, MOTTA_COST_FLOOR)
+        return improvement / regularized_cost * MOTTA_CONSTANT
+
+    @staticmethod
+    def _equipment_item_key(weapon, material="Sin material"):
+        if weapon == "Ninguna":
+            return None
+        normalized_material = (
+            "Sin material" if material in ("Sin material", "Normal") else material
+        )
+        if weapon in ("Escudo", "Rodela"):
+            normalized_material = "Sin material"
+        return weapon, normalized_material
+
+    @staticmethod
+    def _weapon_acquisition_costs(
+        main, off, main_material, off_material, candidate, costs,
+    ):
+        """Coste restante tras descontar, una sola vez, el equipo ya poseído."""
+        owned = []
+        for weapon, material in (
+            (candidate.get("main_weapon", "Ninguna"), candidate.get("main_weapon_material", "Sin material")),
+            (candidate.get("off_hand", "Ninguna"), candidate.get("offhand_material", "Sin material")),
+        ):
+            key = TrollheimApp._equipment_item_key(weapon, material)
+            if key is not None:
+                owned.append(key)
+
+        # Todo guerrero comienza con una daga normal gratuita. Si ya está
+        # equipada es esa misma pieza, no una segunda daga adicional.
+        free_dagger = ("Daga", "Sin material")
+        if free_dagger not in owned:
+            owned.append(free_dagger)
+
+        result = []
+        for weapon, material in ((main, main_material), (off, off_material)):
+            key = TrollheimApp._equipment_item_key(weapon, material)
+            if key is None:
+                result.append(0.0)
+            elif key in owned:
+                owned.remove(key)
+                result.append(0.0)
+            else:
+                result.append(TrollheimApp._weapon_cost(weapon, material, costs))
+        return tuple(result)
 
     @staticmethod
     def _without_optional_equipment(candidate):
@@ -3385,6 +3856,13 @@ class TrollheimApp(tk.Tk):
             weapons = self._selected_weapons()
             if not weapons:
                 raise ValueError("Selecciona al menos un arma para comparar.")
+            materials = self._selected_weapon_materials()
+            if not materials:
+                raise ValueError("Selecciona al menos un material para comparar.")
+            defenses = self._selected_weapon_defenses()
+            weapon_costs = equipment_costs_for_profile(
+                self.candidate_band_id.get(), self.candidate_profile_id.get()
+            )
         except ValueError as exc:
             messagebox.showerror("Error", str(exc))
             return
@@ -3409,17 +3887,20 @@ class TrollheimApp(tk.Tk):
         self.weapon_status_label.config(text="Preparando configuraciones de armas...")
         for row in self.weapon_tree.get_children():
             self.weapon_tree.delete(row)
-        self._reset_mode_cards(self.weapon_cards, self.weapon_visible_modes)
 
         self._simulation_running = True
         threading.Thread(
             target=self.run_weapon_simulations_threadpool,
-            args=(base_candidate, self.enemy_mode.get(), total_simulations, weapons),
+            args=(
+                base_candidate, self.enemy_mode.get(), total_simulations,
+                weapons, materials, defenses, weapon_costs,
+            ),
             daemon=True,
         ).start()
 
     def run_weapon_simulations_threadpool(
-        self, base_candidate, enemy_mode, total_simulations, weapons
+        self, base_candidate, enemy_mode, total_simulations, weapons,
+        materials, defenses, weapon_costs,
     ):
         try:
             custom_enemy = None
@@ -3430,7 +3911,10 @@ class TrollheimApp(tk.Tk):
                 active_pool_names = self._active_enemy_names()
 
             modes = [mode for mode, _title in COMBAT_MODES]
-            loadouts = self._weapon_loadouts(weapons)
+            loadouts = self._materialized_weapon_loadouts(
+                weapons, materials, defenses
+            )
+            loadout_costs = {}
             master_seed = random.randint(1, 2_147_483_647)
             if enemy_mode == "sample":
                 self.after(
@@ -3450,20 +3934,35 @@ class TrollheimApp(tk.Tk):
             self._progress_queue = progress_queue
             self._progress_chunks_done = 0
             tasks = []
-            for mode_index, mode in enumerate(modes):
-                current = self.build_setup(base_candidate, mode)
+            # En esta comparativa todas las configuraciones deben medirse contra
+            # el equipo actual exacto del candidato. Antes cada modalidad creaba
+            # su propia referencia (p. ej. Dual ya añadía una daga), ocultando la
+            # mejora real de las filas que coincidían con esa referencia ficticia.
+            for mode in modes:
+                current = base_candidate.copy()
                 tasks.append((
                     mode, "ESTADO BASE", current, enemy_mode, custom_enemy,
                     active_pool_names, shared_enemy_indices, total_simulations,
-                    master_seed + mode_index * 100_000, True, progress_queue,
+                    master_seed, True, progress_queue,
                     len(tasks), self.enemy_level.get(),
                 ))
 
-            for index, (mode, main, off) in enumerate(loadouts, 1):
+            for index, (
+                mode, main, off, main_material, off_material
+            ) in enumerate(loadouts, 1):
                 candidate = base_candidate.copy()
                 candidate["main_weapon"] = main
                 candidate["off_hand"] = off
-                label = f"{main} || {off}"
+                candidate["main_weapon_material"] = main_material
+                candidate["offhand_material"] = off_material
+                label = self._weapon_loadout_label(
+                    main, off, main_material, off_material
+                )
+                main_cost, off_cost = self._weapon_acquisition_costs(
+                    main, off, main_material, off_material,
+                    base_candidate, weapon_costs,
+                )
+                loadout_costs[label] = (main_cost, off_cost)
                 tasks.append((
                     mode, label, candidate, enemy_mode, custom_enemy,
                     active_pool_names, shared_enemy_indices, total_simulations,
@@ -3509,23 +4008,21 @@ class TrollheimApp(tk.Tk):
                 0, self.update_ui_with_weapon_results, weapon_results,
                 self.get_user_mode_key(base_candidate),
                 {
-                    mode: self._equipment_description(self.build_setup(base_candidate, mode))
+                    mode: self._equipment_description(base_candidate)
                     for mode, _title in COMBAT_MODES
                 },
+                loadout_costs,
             )
         except Exception as exc:
             self._simulation_running = False
             self.after(0, self._simulation_error, exc)
 
     def update_ui_with_weapon_results(
-        self, weapon_results, user_mode_key, equipment
+        self, weapon_results, user_mode_key, equipment, loadout_costs,
     ):
         base_rates = {mode: data[0] for mode, data in weapon_results.items()}
-        self._update_mode_cards(
-            self.weapon_cards, base_rates, user_mode_key, equipment
-        )
-        self._weapon_card_data = (base_rates, user_mode_key, equipment)
-        self._weapon_table_data = (weapon_results, equipment)
+        self._weapon_card_data = None
+        self._weapon_table_data = (weapon_results, equipment, loadout_costs)
         self._weapons_generated_at = datetime.now().isoformat(timespec="seconds")
         self._render_weapon_table()
         self._finish_progress(
@@ -3539,7 +4036,8 @@ class TrollheimApp(tk.Tk):
         table_data = getattr(self, "_weapon_table_data", None)
         if not table_data:
             return
-        weapon_results, equipment = table_data
+        weapon_results, equipment, *extra = table_data
+        loadout_costs = extra[0] if extra else {}
         rows = {}
         for mode, (_base_rate, results) in weapon_results.items():
             for label, rate, impact in results:
@@ -3558,27 +4056,60 @@ class TrollheimApp(tk.Tk):
             ),
             reverse=True,
         )
+        summaries = {}
         for label, values in ordered:
-            main, off = label.split(" || ", 1)
             best_mode = self._best_visible_mode(values, self.weapon_visible_modes)
             if best_mode is None:
                 continue
+            best_rate, best_impact = values[best_mode]
+            main_cost, off_cost = loadout_costs.get(label, (None, None))
+            _cost_display, total_cost = self._weapon_cost_display(main_cost, off_cost)
+            summaries[label] = (
+                best_mode, best_rate, best_impact,
+                self._motta_index(best_impact, total_cost),
+            )
+        highest_rate = max(
+            (summary[1] for summary in summaries.values()), default=None
+        )
+        highest_motta = max(
+            (summary[3] for summary in summaries.values() if summary[3] is not None),
+            default=None,
+        )
+        for label, values in ordered:
+            main, off = label.split(" || ", 1)
+            summary = summaries.get(label)
+            if summary is None:
+                continue
+            best_mode, best_rate, best_impact, motta = summary
             cells = []
             for mode, _title in COMBAT_MODES:
                 if mode not in values:
                     cells.append("")
                     continue
                 rate, impact = values[mode]
-                marker = "★ " if mode == best_mode else ""
-                cells.append(f"{marker}{rate:.2f}% ({impact:+.2f}%)")
-            best_rate, best_impact = values[best_mode]
+                cells.append(f"{rate:.2f}% ({impact:+.2f}%)")
+            main_cost, off_cost = loadout_costs.get(label, (None, None))
+            cost_display, total_cost = self._weapon_cost_display(
+                main_cost, off_cost, off != "Ninguna"
+            )
+            victory_marker = (
+                "★ " if highest_rate is not None
+                and abs(best_rate - highest_rate) < 0.00001 else ""
+            )
+            motta_marker = (
+                "★ " if motta is not None and highest_motta is not None
+                and abs(motta - highest_motta) < 0.00001 else ""
+            )
             self.weapon_tree.insert(
                 "", "end",
                 values=(
                     main,
                     off if off != "Ninguna" else "—",
                     *cells,
-                    f"★ {best_rate:.2f}% ({best_impact:+.2f}%)",
+                    f"{victory_marker}{best_rate:.2f}% ({best_impact:+.2f}%)",
+                    f"{motta_marker}{motta:.2f}" if motta is not None else "—",
+                    cost_display,
+                    f"{total_cost:g}" if total_cost is not None else "",
                     equipment[best_mode],
                 ),
             )

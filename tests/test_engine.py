@@ -14,7 +14,9 @@ from trollheim_simulator.engine import (
     run_single_task_optimized,
 )
 from trollheim_simulator.enemies import ENEMY_PROFILES
-from trollheim_simulator.rules import NORMAL_ENEMIES_DATABASE, TWO_HANDED_WEAPONS
+from trollheim_simulator.rules import (
+    NORMAL_ENEMIES_DATABASE, TWO_HANDED_WEAPONS, WEAPON_UNARMED,
+)
 from trollheim_simulator.ui import DEFAULT_COMBO_SIMULATIONS, TrollheimApp
 
 
@@ -285,6 +287,7 @@ def test_weapon_loadouts_cover_the_four_hand_configurations():
     assert ("Dual", "Maza", "Espada") in loadouts
     assert ("TwoHand", "Arma 2H", "Ninguna") in loadouts
     assert ("TwoHand", "Bagh Nakh", "Ninguna") in loadouts
+    assert ("Single", "Ninguna", "Ninguna") in loadouts
 
 
 def test_two_handed_weapons_are_not_generated_as_dual_combinations():
@@ -317,6 +320,112 @@ def test_sun_gauntlet_is_only_generated_in_the_off_hand():
     loadouts = TrollheimApp._weapon_loadouts(["Espada", "Guantelete Solar"])
     assert not any(main == "Guantelete Solar" for _mode, main, _off in loadouts)
     assert ("Dual", "Espada", "Guantelete Solar") in loadouts
+
+
+def test_weapon_loadouts_use_selected_defenses_and_respect_exceptions():
+    loadouts = TrollheimApp._weapon_loadouts(
+        ["Espada", "Lanza", "Mangual", "Rebanadora"],
+        ("Escudo", "Rodela"),
+    )
+    assert ("Shield", "Espada", "Escudo") in loadouts
+    assert ("Shield", "Espada", "Rodela") in loadouts
+    assert ("Shield", "Lanza", "Rodela") in loadouts
+    assert ("Shield", "Rebanadora", "Escudo") in loadouts
+    assert ("Shield", "Rebanadora", "Rodela") not in loadouts
+    assert not any(mode == "Shield" and main == "Mangual" for mode, main, _off in loadouts)
+
+
+def test_materialized_weapon_loadouts_assign_material_to_each_weapon_only():
+    loadouts = TrollheimApp._materialized_weapon_loadouts(
+        ["Espada", "Daga"], ("Sin material", "Gromril"), ("Rodela",)
+    )
+    assert ("Shield", "Espada", "Rodela", "Gromril", "Sin material") in loadouts
+    assert ("Dual", "Espada", "Daga", "Gromril", "Sin material") in loadouts
+    assert ("Dual", "Espada", "Daga", "Sin material", "Gromril") in loadouts
+    assert all(
+        off_material == "Sin material"
+        for _mode, _main, off, _main_material, off_material in loadouts
+        if off in {"Ninguna", "Escudo", "Rodela"}
+    )
+
+
+def test_weapon_cost_uses_material_multiplier_and_formats_total():
+    costs = {"Espada": 10.0, "Rodela": 5.0}
+    main = TrollheimApp._weapon_cost("Espada", "Gromril", costs)
+    off = TrollheimApp._weapon_cost("Rodela", "Sin material", costs)
+    display, total = TrollheimApp._weapon_cost_display(main, off)
+    assert main == 40.0
+    assert total == 45.0
+    assert display == "40 + 5 = 45 co"
+
+
+def test_owned_weapons_are_deducted_once_regardless_of_hand():
+    candidate = {
+        "main_weapon": "Espada", "main_weapon_material": "Gromril",
+        "off_hand": "Daga", "offhand_material": "Sin material",
+    }
+    costs = {"Espada": 10.0, "Daga": 2.0}
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Daga", "Espada", "Sin material", "Gromril", candidate, costs,
+    ) == (0.0, 0.0)
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Espada", "Espada", "Gromril", "Gromril", candidate, costs,
+    ) == (0.0, 40.0)
+
+
+def test_every_warrior_owns_exactly_one_free_normal_dagger():
+    costs = {"Daga": 2.0}
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Daga", "Ninguna", "Sin material", "Sin material", {}, costs,
+    ) == (0.0, 0.0)
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Daga", "Daga", "Sin material", "Sin material", {}, costs,
+    ) == (0.0, 2.0)
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Daga", "Ninguna", "Gromril", "Sin material", {}, costs,
+    ) == (8.0, 0.0)
+
+
+def test_empty_hands_have_zero_acquisition_cost_and_a_clear_label():
+    assert TrollheimApp._weapon_acquisition_costs(
+        "Ninguna", "Ninguna", "Sin material", "Sin material", {}, {}
+    ) == (0.0, 0.0)
+    assert TrollheimApp._weapon_loadout_label(
+        "Ninguna", "Ninguna", "Sin material", "Sin material"
+    ) == "Sin armas || Ninguna"
+    assert engine._make_fighter(FIGHTER | {"main_weapon": "Ninguna"})[6] == WEAPON_UNARMED
+
+
+def test_weapon_export_includes_total_cost_and_motta_index():
+    table_data = (
+        {
+            "Single": [40.0, [["Espada || Ninguna", 50.0, 10.0]]],
+            "Shield": [40.0, []], "Dual": [40.0, []], "TwoHand": [40.0, []],
+        },
+        {"Single": "Espada"},
+        {"Espada || Ninguna": (10.0, 0.0)},
+    )
+    headers, rows = TrollheimApp._result_export_rows("weapons", table_data)
+    row = next(value for value in rows if value[0] == "Espada")
+    assert "Coste" in headers
+    assert "Índice MOTTA" in headers
+    assert row[headers.index("Coste")] == 10.0
+    assert np.isclose(
+        row[headers.index("Índice MOTTA")],
+        10.0 / np.hypot(10.0, 0.01) * 507.4,
+    )
+
+
+def test_regularized_motta_is_large_at_zero_cost_linear_and_symmetric():
+    positive = TrollheimApp._motta_index(2.0, 0.0)
+    negative = TrollheimApp._motta_index(-2.0, 0.0)
+    assert np.isclose(positive, 101_480.0)
+    assert negative == -positive
+    assert TrollheimApp._motta_index(0.0, 0.0) == 0.0
+    assert np.isclose(
+        TrollheimApp._motta_index(2.0, 10.0),
+        2.0 / np.hypot(10.0, 0.01) * 507.4,
+    )
 
 
 def test_two_poisons_are_applied_one_to_each_hand():

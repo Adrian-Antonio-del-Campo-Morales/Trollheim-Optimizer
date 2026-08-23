@@ -405,6 +405,65 @@ def find_profile(band_id: str, profile_id: str) -> CandidateProfile | None:
     return None
 
 
+@lru_cache(maxsize=None)
+def equipment_costs_for_profile(band_id: str = "", profile_id: str = "") -> dict[str, float]:
+    """Devuelve costes por opción; usa la lista de banda si hay un perfil."""
+    costs: dict[str, float] = {}
+    if band_id and profile_id:
+        for path in sorted(_knowledge_root().glob("*.yaml")):
+            with path.open("r", encoding="utf-8") as stream:
+                raw = yaml.safe_load(stream)
+            if str(raw.get("id", "")) != band_id:
+                continue
+            profile = next(
+                (row for row in raw.get("profiles") or () if str(row.get("id", "")) == profile_id),
+                None,
+            )
+            if profile is None:
+                break
+            lists = {
+                row["id"]: row.get("items") or ()
+                for row in raw.get("equipment_lists") or ()
+            }
+            for list_id in profile.get("equipment_lists") or ():
+                for item in lists.get(list_id, ()):
+                    option = ITEM_TO_OPTION.get(item.get("item_id"))
+                    value = item.get("cost")
+                    if option and isinstance(value, (int, float)):
+                        costs[option] = min(costs.get(option, float(value)), float(value))
+            if "Yari (una mano)" in costs:
+                costs["Yari (dos manos)"] = costs["Yari (una mano)"]
+            return {**equipment_costs_for_profile(), **costs}
+
+    catalog = _knowledge_root().parent / "catalog" / "market-prices.yaml"
+    if catalog.is_file():
+        with catalog.open("r", encoding="utf-8") as stream:
+            raw = yaml.safe_load(stream)
+        general = raw.get("general") or {}
+        rows = (*general.get("melee_weapons", ()), *general.get("armour", ()))
+        for item in rows:
+            option = ITEM_TO_OPTION.get(item.get("id"))
+            value = item.get("cost")
+            if option and isinstance(value, (int, float, str)):
+                try:
+                    costs[option] = float(value)
+                except ValueError:
+                    pass
+    costs.setdefault("Arma natural", 0.0)
+    for path in sorted(_knowledge_root().glob("*.yaml")):
+        with path.open("r", encoding="utf-8") as stream:
+            band = yaml.safe_load(stream)
+        for equipment_list in band.get("equipment_lists") or ():
+            for item in equipment_list.get("items") or ():
+                option = ITEM_TO_OPTION.get(item.get("item_id"))
+                value = item.get("cost")
+                if option and option not in costs and isinstance(value, (int, float)):
+                    costs[option] = float(value)
+    if "Yari (una mano)" in costs:
+        costs["Yari (dos manos)"] = costs["Yari (una mano)"]
+    return costs
+
+
 def usable_main_weapons(profile: CandidateProfile) -> tuple[str, ...]:
     return tuple(weapon for weapon in profile.weapons if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS)
 

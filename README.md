@@ -36,7 +36,7 @@ repositorio antes de ejecutarlo.
 - Rivales aleatorios ponderados por perfil, dificultad y equipo legal.
 - Comparación de mejoras individuales y combinaciones de mejoras.
 - Comparación de armas, armaduras, objetos y consumibles.
-- Vistas por configuración de manos o por resultado óptimo.
+- Resultados óptimos de configuraciones de armas con coste e Índice MOTTA.
 - Número de simulaciones configurable en cada análisis.
 
 El alcance, las decisiones de modelado y el trabajo pendiente se mantienen en
@@ -71,6 +71,29 @@ configuración de la muestra aleatoria. Cada análisis calculado se guarda en su
 propia hoja. **Cargar** recupera todo ese estado y los resultados. **Cargar
 Candidato** y **Cargar Enemigos** permiten reemplazar solamente esa parte del
 libro; la segunda opción activa automáticamente el rival configurable.
+
+### Índice MOTTA
+
+La pestaña **Configuraciones de Armas** calcula la eficiencia económica de cada
+configuración mediante:
+
+```text
+                      O_m × mejora
+Índice MOTTA = ──────────────────────────────
+                     √(coste² + 0,01²)
+O_m = 507,4
+```
+
+`mejora` es la diferencia en puntos porcentuales de victoria respecto al equipo
+actual exacto del candidato. `coste` es el gasto pendiente para adquirir la
+configuración: no incluye las piezas que el candidato ya lleva y descuenta la
+daga normal gratuita con la que empieza todo guerrero.
+
+El término `0,01` regulariza el denominador sin separar el coste cero mediante
+un caso especial. Una mejora gratuita obtiene así un valor positivo muy alto;
+un empeoramiento gratuito obtiene el mismo comportamiento con signo negativo;
+y una mejora nula produce un índice cero. Para costes habituales, el resultado
+es prácticamente igual a `507,4 × mejora / coste`.
 
 ## Versión congelada por equipo
 
