@@ -91,7 +91,10 @@ def _armor_base_save(armor):
 
 def _make_fighter(config):
     """Convierte una ficha en el array compacto usado por el motor."""
-    main = WEAPON_CODES.get(config.get("main_weapon", "Espada"), WEAPON_SWORD)
+    main_name = config.get("main_weapon", "Espada")
+    main = WEAPON_UNARMED if main_name == "Ninguna" else WEAPON_CODES.get(
+        main_name, WEAPON_SWORD
+    )
     off = OFFHAND_CODES.get(config.get("off_hand", "Ninguna"), OFF_NONE)
     if main == WEAPON_SUN_GAUNTLET:
         # El guantelete solar es siempre el arma secundaria. Los datos antiguos
@@ -238,7 +241,7 @@ def _nb_to_wound(f_att, r_def):
 def _nb_armour_save(base_save, weapon):
     if weapon in (
         WEAPON_DAGGER, WEAPON_YAMBIYA, WEAPON_PIRATE_SCOURGE,
-        WEAPON_PLAGUE_DAGGER,
+        WEAPON_PLAGUE_DAGGER, WEAPON_UNARMED,
     ):
         return min(6, base_save - 1)
     return base_save
@@ -555,6 +558,8 @@ def _attack_strength(attacker, weapon, defender_is_seasoned, first_round=True, a
     elif weapon == WEAPON_WITCH_BLADE:
         strength += 1 if first_round else 0
     elif weapon == WEAPON_RAPIER:
+        strength -= 1
+    elif weapon == WEAPON_UNARMED:
         strength -= 1
     material = int(attacker[12]) if attack_index < 0 else _material_for_attack(attacker, attack_index)
     if material == MATERIAL_OBSIDIAN:
