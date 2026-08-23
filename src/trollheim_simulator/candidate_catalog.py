@@ -386,6 +386,18 @@ def _build_profile(band, profile, equipment_lists, band_skills) -> CandidateProf
                 or bool(special_access.intersection(skill.access_tags))
             )
         )
+    # Algunas bandas repiten como especial una habilidad general con el mismo
+    # nombre (por ejemplo, Contactos). Se muestra una sola vez, conservando la
+    # primera categoría canónica a la que tiene acceso el guerrero.
+    seen_skills = set()
+    for category in CATEGORY_ORDER:
+        unique = tuple(
+            skill for skill in skills_by_category.get(category, ())
+            if skill not in seen_skills
+        )
+        if category in skills_by_category:
+            skills_by_category[category] = unique
+        seen_skills.update(unique)
     allowed_skills = tuple(
         name for category in CATEGORY_ORDER for name in skills_by_category.get(category, ())
     )

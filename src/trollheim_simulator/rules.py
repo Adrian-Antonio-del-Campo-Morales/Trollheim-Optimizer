@@ -133,6 +133,7 @@ SKILLS = [
     "Golpe Poderoso",
     "Curtido",
     "Carga Imparable",
+    "Carga Feroz",
     "Reflejos Felinos",
     "En Pie de un Salto",
     "Fortachón",
@@ -141,6 +142,45 @@ SKILLS = [
     "Experto en Hachas",
     "Golpe con el Escudo",
     "Barrido",
+    "Agilidad Élfica",
+    "Agilidad élfica",
+    "Armas del Norte",
+    "Arte del Combate sin Armas",
+    "Bíceps Muy Desarrollados",
+    "El Arte del Combate sin Armas",
+    "Furia Roja",
+    "Fuerza del Acero",
+    "Golpe Demoledor",
+    "Golpe Infalible",
+    "Infalible",
+    "Ignorar el dolor",
+    "Inocencia Perdida",
+    "Inocencia Pérdida",
+    "Maestro de la Espada",
+    "Guerrero Imbatible",
+    "Lucha con Cuchillo",
+    "Maestría con el Escudo",
+    "Machacabezas",
+    "Maldición del Renacido",
+    "Matador de Monstruos",
+    "Miniath",
+    "Monstruosidad",
+    "Muy Duro",
+    "Odio Infinito",
+    "Postura Defensiva",
+    "Piel endurecida",
+    "Reflejos de Vampiro",
+    "Rugido de batalla",
+    "Sermón Estimulante",
+    "Señal de Sigmar",
+    "Tendones de Hierro",
+    "Constitución resistente",
+    "Cráneo de Piedra",
+    "Duro como el Acero",
+    "Enloquecido",
+    "Kabezadura",
+    "Suerte",
+    "Virtud del Valor",
 ]
 
 SKILL_DESCRIPTIONS = {
@@ -158,6 +198,7 @@ SKILL_DESCRIPTIONS = {
         "Reduce en -1 la Fuerza efectiva de los ataques recibidos (mínimo F1).",
     "Carga Imparable":
         "Suma +1 a la Habilidad de Armas durante la carga.",
+    "Carga Feroz": "Duplica los Ataques al cargar, con -1 para impactar ese turno.",
     "Reflejos Felinos":
         "Si recibe una carga, el orden de ataque se decide por Iniciativa.",
     "En Pie de un Salto":
@@ -174,6 +215,45 @@ SKILL_DESCRIPTIONS = {
         "Concede un ataque adicional con Fuerza de usuario y mala penetración.",
     "Barrido":
         "Con un arma a dos manos, cambia todos los ataques por un impacto automático si el rival falla Iniciativa.",
+    "Agilidad Élfica": "Salvación especial de 6+ cuerpo a cuerpo; mejora a 4+ con Echarse a un Lado.",
+    "Agilidad élfica": "Salvación especial de 6+ cuerpo a cuerpo; mejora a 4+ con Echarse a un Lado.",
+    "Armas del Norte": "Repite las tiradas para impactar fallidas con hacha o arma a dos manos.",
+    "Arte del Combate sin Armas": "Obtiene +1 Ataque al combatir desarmado o con garras.",
+    "Bíceps Muy Desarrollados": "Mantiene el bonificador de Fuerza de las armas Pesadas.",
+    "El Arte del Combate sin Armas": "Obtiene +1 Ataque al combatir desarmado o con garras.",
+    "Furia Roja": "+1 Ataque.",
+    "Fuerza del Acero": "+1 Fuerza durante la carga.",
+    "Golpe Demoledor": "Sus ataques no pueden pararse.",
+    "Golpe Infalible": "Repite las tiradas para herir fallidas.",
+    "Infalible": "Repite las tiradas para impactar fallidas durante la carga.",
+    "Ignorar el dolor": "Los resultados de Aturdido pasan a Derribado.",
+    "Inocencia Perdida": "Ataca primero en cuerpo a cuerpo.",
+    "Inocencia Pérdida": "Ataca primero en cuerpo a cuerpo.",
+    "Maestro de la Espada": "Para igualando la tirada y repite una parada fallida.",
+    "Guerrero Imbatible": "Mejora las paradas y permite dos con dos armas de Parada.",
+    "Lucha con Cuchillo": "+1 HA y +1 en la Tabla de Heridas con daga o yambiya.",
+    "Maestría con el Escudo": "El escudo permite parar y conserva su salvación.",
+    "Machacabezas": "Convierte los resultados de Derribado que causa en Aturdido.",
+    "Maldición del Renacido": "Regenera heridas no salvadas con 4+.",
+    "Matador de Monstruos": "Hiere como mínimo con 4+.",
+    "Miniath": "Repite una parada fallida cuando usa un arma con Parada.",
+    "Monstruosidad": "+1 Herida.",
+    "Muy Duro": "+1 a la salvación por armadura.",
+    "Odio Infinito": "Repite las tiradas para impactar fallidas.",
+    "Postura Defensiva": "Puede parar con cualquier arma; las armas con Parada igualan la tirada.",
+    "Piel endurecida": "Solo queda fuera de combate con un 6 en la Tabla de Heridas.",
+    "Reflejos de Vampiro": "Salvación especial de 6+ contra heridas.",
+    "Rugido de batalla": "Los enemigos sufren -1 para impactar en la primera ronda.",
+    "Sermón Estimulante": "+1 Ataque durante el turno.",
+    "Señal de Sigmar": "No Muertos y Poseídos pierden un ataque en la primera ronda.",
+    "Tendones de Hierro": "+1 Fuerza.",
+    "Constitución resistente": "Ignora un impacto crítico con 5+.",
+    "Cráneo de Piedra": "Convierte Aturdido en Derribado con 3+, o 2+ con Casco.",
+    "Duro como el Acero": "Solo queda fuera de combate con un 6 en la Tabla de Heridas.",
+    "Enloquecido": "+1 para impactar durante la carga.",
+    "Kabezadura": "Convierte Aturdido en Derribado con 3+, o 2+ con Casco.",
+    "Suerte": "Repite una tirada propia una vez por batalla.",
+    "Virtud del Valor": "Repite para impactar contra enemigos con Fuerza superior.",
 }
 
 WEAPONS_GENERAL = [
@@ -594,5 +674,37 @@ SKILL_AXE_MASTER = 1 << 11
 SKILL_AXE_EXPERT = 1 << 12
 SKILL_SHIELD_STRIKE = 1 << 13
 SKILL_SWEEP = 1 << 14
+SKILL_ELVEN_AGILITY = 1 << 15
+SKILL_NORTHERN_WEAPONS = 1 << 16
+SKILL_UNARMED_ART = 1 << 17
+SKILL_RED_FURY = 1 << 18
+SKILL_UNPARRYABLE = 1 << 19
+SKILL_REROLL_WOUNDS = 1 << 20
+SKILL_IGNORE_PAIN = 1 << 21
+SKILL_ALWAYS_FIRST = 1 << 22
+SKILL_SWORD_MASTER = 1 << 23
+SKILL_SHIELD_MASTERY = 1 << 24
+SKILL_MINIATH = 1 << 25
+SKILL_MONSTROUS = 1 << 26
+SKILL_VERY_TOUGH = 1 << 27
+SKILL_REROLL_HITS = 1 << 28
+SKILL_DEFENSIVE_STANCE = 1 << 29
+SKILL_VAMPIRE_REFLEXES = 1 << 30
+SKILL_IRON_SINEWS = 1 << 31
+SKILL_CHARGE_REROLL = 1 << 32
+SKILL_HEAD_CRUSHER = 1 << 33
+SKILL_REGENERATION = 1 << 34
+SKILL_MONSTER_SLAYER = 1 << 35
+SKILL_HARDENED_SKIN = 1 << 36
+SKILL_CRITICAL_RESISTANCE = 1 << 37
+SKILL_FEROCIOUS_CHARGE = 1 << 38
+SKILL_CHARGE_STRENGTH = 1 << 39
+SKILL_UNBEATABLE = 1 << 40
+SKILL_KNIFE_FIGHT = 1 << 41
+SKILL_BATTLE_ROAR = 1 << 42
+SKILL_SIGMAR_SIGNAL = 1 << 43
+SKILL_VALOUR = 1 << 44
+SKILL_STONE_SKULL = 1 << 45
+SKILL_LUCK = 1 << 46
 # Alias binario para configuraciones y extensiones anteriores a la unificación.
 SKILL_SCIMITAR_FENCER = SKILL_FENCER

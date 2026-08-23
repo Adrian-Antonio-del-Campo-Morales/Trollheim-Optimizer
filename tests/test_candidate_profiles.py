@@ -9,6 +9,8 @@ from trollheim_simulator.candidate_catalog import (
     load_bands,
 )
 from trollheim_simulator.ui import TrollheimApp
+from trollheim_simulator.rules import SKILLS
+from trollheim_simulator.rules import SKILLS
 from trollheim_simulator.workbooks import (
     DATA_SHEET,
     ENEMIES_SHEET,
@@ -130,6 +132,30 @@ def test_band_skills_are_contextual_and_profile_access_is_respected():
     assert "Hambre Negra" not in verminkin.skills
 
 
+def test_every_profile_exposes_exactly_the_skills_from_its_allowed_categories():
+    for band in load_bands():
+        for profile in band.profiles:
+            flattened = tuple(
+                skill
+                for skills in profile.skills_by_category.values()
+                for skill in skills
+            )
+            assert profile.skills == flattened, (band.name, profile.name)
+            assert len(profile.skills) == len(set(profile.skills)), (
+                band.name, profile.name,
+            )
+
+
+def test_every_engine_skill_is_available_to_at_least_one_canonical_profile():
+    catalog_skills = {
+        skill
+        for band in load_bands()
+        for profile in band.profiles
+        for skill in profile.skills
+    }
+    assert set(SKILLS) <= catalog_skills
+
+
 def test_high_elf_profiles_keep_distinct_skill_columns_and_restrictions():
     loremaster = find_profile("lustria-altos-elfos", "high-elf-loremaster")
     explorer = find_profile("lustria-altos-elfos", "high-elf-explorer")
@@ -141,6 +167,14 @@ def test_high_elf_profiles_keep_distinct_skill_columns_and_restrictions():
     assert "Maestro de las runas" not in explorer.skills_by_category["special"]
     assert "Suerte" in explorer.skills_by_category["special"]
     assert "Suerte" not in loremaster.skills_by_category["special"]
+    assert {
+        "Reflejos Felinos", "En Pie de un Salto", "Agilidad élfica",
+        "Miniath", "Golpe Infalible", "Suerte",
+    } <= set(explorer.skills).intersection(SKILLS)
+    assert {
+        "Reflejos Felinos", "En Pie de un Salto", "Agilidad élfica",
+        "Miniath", "Golpe Infalible",
+    } <= set(explorer.skills).intersection(SKILLS)
 
 
 def test_candidate_workbook_round_trip_and_preserves_result_sheets(tmp_path: Path):

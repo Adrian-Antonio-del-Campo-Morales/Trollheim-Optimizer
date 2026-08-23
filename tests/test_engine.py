@@ -188,6 +188,50 @@ def test_effective_key_never_drops_general_combat_skills():
         assert effective_fighter_key(FIGHTER) != effective_fighter_key(upgraded)
 
 
+def test_every_advertised_combat_skill_has_an_engine_mask():
+    for skill in engine.SKILLS:
+        assert engine._skill_mask([skill]), skill
+
+
+def test_new_permanent_skill_bonuses_are_encoded_in_fighter():
+    fighter = engine._make_fighter(FIGHTER | {
+        "skills": ["Tendones de Hierro", "Monstruosidad", "Furia Roja", "Muy Duro"],
+    })
+    assert fighter[1] == FIGHTER["F"] + 1
+    assert fighter[3] == FIGHTER["H"] + 1
+    assert fighter[5] == FIGHTER["A"] + 1
+    assert fighter[8] == engine._armor_base_save(FIGHTER["armor"]) - 1
+
+
+def test_high_elf_melee_skills_are_encoded():
+    mask = engine._skill_mask([
+        "Agilidad élfica", "Miniath", "Golpe Infalible", "Suerte",
+    ])
+    assert mask & engine.SKILL_ELVEN_AGILITY
+    assert mask & engine.SKILL_MINIATH
+    assert mask & engine.SKILL_REROLL_WOUNDS
+    assert mask & engine.SKILL_LUCK
+
+
+def test_new_permanent_skill_bonuses_are_encoded_in_fighter():
+    fighter = engine._make_fighter(FIGHTER | {
+        "skills": ["Tendones de Hierro", "Monstruosidad", "Furia Roja", "Muy Duro"],
+    })
+    assert fighter[1] == FIGHTER["F"] + 1
+    assert fighter[3] == FIGHTER["H"] + 1
+    assert fighter[5] == FIGHTER["A"] + 1
+    assert fighter[8] == engine._armor_base_save(FIGHTER["armor"]) - 1
+
+
+def test_high_elf_melee_skills_are_encoded():
+    mask = engine._skill_mask([
+        "Agilidad élfica", "Miniath", "Golpe Infalible",
+    ])
+    assert mask & engine.SKILL_ELVEN_AGILITY
+    assert mask & engine.SKILL_MINIATH
+    assert mask & engine.SKILL_REROLL_WOUNDS
+
+
 def test_task_deduplication_preserves_aliases_for_inert_skills():
     base_task = ("Single", "base", FIGHTER, None, None, None, None, 100, 1, True)
     inert_task = (
