@@ -1,127 +1,62 @@
 """Catálogo de perfiles, equipo y constantes del simulador."""
 
-# Ajuste gordo. Bájalo para probar cosas sin quemar la CPU.
-
-TOTAL_SIMULATIONS = 100_000
-
-# Perfiles jugables
-
-HEROES_DATABASE = {
-    "Héroe Humano": {
-        "M": 4, "HA": 4, "HP": 4, "F": 3, "R": 3,
-        "H": 1, "I": 4, "A": 1, "Ld": 8
+# Reglas opcionales que alteran globalmente una simulación. Las claves se
+# guardan en los libros de Excel para que una partida pueda reproducirse.
+HOUSE_RULES = {
+    "anti_offhand": {
+        "name": "Anti Arma Secundaria",
+        "description": (
+            "El ataque extra concedido por un arma secundaria sufre -1 a las "
+            "tiradas para impactar."
+        ),
     },
-    "Héroe Enano": {
-        "M": 3, "HA": 5, "HP": 4, "F": 3, "R": 4,
-        "H": 1, "I": 2, "A": 1, "Ld": 9
+    "anti_dual": {
+        "name": "Anti Dos Armas",
+        "description": (
+            "Mientras un guerrero combate con dos armas, todos sus ataques "
+            "sufren -1 a las tiradas para impactar."
+        ),
     },
-    "Héroe Poseído": {
-        "M": 5, "HA": 4, "HP": 0, "F": 4, "R": 4,
-        "H": 2, "I": 4, "A": 2, "Ld": 7
+    "cheap_armour": {
+        "name": "Armaduras Baratas",
+        "description": (
+            "Armaduras, cascos, escudos y rodelas cuestan la mitad, redondeando "
+            "hacia arriba."
+        ),
     },
-    "Troll": {
-        "M": 6, "HA": 3, "HP": 1, "F": 5, "R": 4,
-        "H": 3, "I": 1, "A": 3, "Ld": 4
+    "better_armour": {
+        "name": "Armaduras Mejores",
+        "description": "Todas las armaduras corporales otorgan +1 punto de armadura.",
     },
-    "Héroe Elfo": {
-        "M": 5, "HA": 5, "HP": 4, "F": 3, "R": 3,
-        "H": 1, "I": 6, "A": 1, "Ld": 9
+    "hard_armour": {
+        "name": "Armaduras Duras",
+        "description": (
+            "La penetración de armadura debida a la Fuerza comienza en F5 en "
+            "lugar de F4."
+        ),
     },
-    "Héroe Bárbaro": {
-        "M": 4, "HA": 5, "HP": 3, "F": 4, "R": 4,
-        "H": 1, "I": 5, "A": 1, "Ld": 8
+    "useful_shields": {
+        "name": "Escudos útiles",
+        "description": (
+            "Un escudo usado con un arma de mano otorga +1 punto de armadura "
+            "adicional contra ataques cuerpo a cuerpo."
+        ),
     },
-    "Héroe Asesino": {
-        "M": 6, "HA": 4, "HP": 4, "F": 4, "R": 3,
-        "H": 1, "I": 5, "A": 1, "Ld": 7
-    },
-}
-
-HEROES_WEIGHTS = {
-    "Héroe Humano": 1.0,
-    "Héroe Enano": 0.5,
-    "Héroe Poseído": 0.5,
-    "Troll": 0.5,
-    "Héroe Elfo": 0.5,
-    "Héroe Bárbaro": 0.5,
-    "Héroe Asesino": 0.5,
-}
-
-
-# Carne de cañón, monstruos y demás gente con malas intenciones
-
-NORMAL_ENEMIES_DATABASE = {
-    "Humano": {
-        "M": 4, "HA": 3, "HP": 3, "F": 3, "R": 3,
-        "H": 1, "I": 3, "A": 1, "Ld": 7
-    },
-    "Enano": {
-        "M": 3, "HA": 4, "HP": 3, "F": 3, "R": 4,
-        "H": 1, "I": 2, "A": 1, "Ld": 9
-    },
-    "Bestia": {
-        "M": 5, "HA": 4, "HP": 3, "F": 4, "R": 4,
-        "H": 1, "I": 3, "A": 1, "Ld": 7
-    },
-    "Orco": {
-        "M": 4, "HA": 4, "HP": 3, "F": 3, "R": 4,
-        "H": 1, "I": 3, "A": 1, "Ld": 7
-    },
-    "Elfo": {
-        "M": 5, "HA": 4, "HP": 4, "F": 3, "R": 3,
-        "H": 1, "I": 6, "A": 1, "Ld": 8
-    },
-    "Bárbaro": {
-        "M": 4, "HA": 4, "HP": 3, "F": 3, "R": 3,
-        "H": 1, "I": 4, "A": 1, "Ld": 7
-    },
-    "Lobo": {
-        "M": 7, "HA": 4, "HP": 0, "F": 4, "R": 3,
-        "H": 1, "I": 3, "A": 1, "Ld": 5
-    },
-    "Ogro": {
-        "M": 6, "HA": 3, "HP": 2, "F": 4, "R": 4,
-        "H": 3, "I": 2, "A": 3, "Ld": 7
-    },
-    "Vampiro": {
-        "M": 6, "HA": 4, "HP": 4, "F": 4, "R": 4,
-        "H": 2, "I": 5, "A": 2, "Ld": 8
-    },
-    "Zombie": {
-        "M": 4, "HA": 2, "HP": 0, "F": 3, "R": 3,
-        "H": 1, "I": 1, "A": 1, "Ld": 5
-    },
-    "Rata": {
-        "M": 5, "HA": 3, "HP": 3, "F": 3, "R": 3,
-        "H": 1, "I": 4, "A": 1, "Ld": 5
+    "expensive_junk": {
+        "name": "Basura Cara",
+        "description": "Las mazas y las hondas pasan a costar 5 co.",
     },
 }
 
-NORMAL_ENEMIES_WEIGHTS = {
-    "Humano": 2.0,
-    "Enano": 1.0,
-    "Bestia": 1.0,
-    "Orco": 1.0,
-    "Elfo": 1.0,
-    "Bárbaro": 1.0,
-    "Lobo": 1.0,
-    "Ogro": 1.0,
-    "Vampiro": 1.0,
-    "Zombie": 1.0,
-    "Rata": 1.0,
+HOUSE_RULE_CONFIG_KEYS = {
+    "anti_offhand": "house_rule_offhand_penalty",
+    "anti_dual": "house_rule_dual_penalty",
+    "cheap_armour": "house_rule_cheap_armour",
+    "better_armour": "house_rule_better_armour",
+    "hard_armour": "house_rule_hard_armour",
+    "useful_shields": "house_rule_useful_shields",
+    "expensive_junk": "house_rule_expensive_junk",
 }
-
-
-ENEMIES_DATABASE = {
-    **HEROES_DATABASE,
-    **NORMAL_ENEMIES_DATABASE,
-}
-
-RACIAL_WEIGHTS = {
-    **HEROES_WEIGHTS,
-    **NORMAL_ENEMIES_WEIGHTS,
-}
-
 
 # Habilidades y equipo
 
@@ -381,8 +316,11 @@ ARMORS = [
     "Ropajes de Ninja",
     "Ropajes de Asesino Eshin",
     "Armadura Kitinoza",
-    "Capa de Dragón Marino",
 ]
+
+# La capa concede una tirada de salvación, pero es equipo especial y no una
+# armadura corporal.
+BODY_ARMORS = tuple(ARMORS)
 
 PREPARATIONS = [
     "Ninguno",
@@ -414,6 +352,13 @@ POISONS = [
     "Toxina del Diablo",
     "Saliva de Araña",
 ]
+
+EQUIPMENT_SELECTOR_OPTIONS = (
+    "Casco",
+    "Amuleto de la suerte",
+    "Capa de Dragón Marino",
+    *(value for value in PREPARATIONS if value != "Ninguno"),
+)
 
 POISON_DESCRIPTIONS = {
     "Sin veneno": "El arma conserva sus reglas normales.",
@@ -495,9 +440,6 @@ WEAPON_UNARMED = 59
 OFF_NONE = -1
 OFF_SHIELD = -2
 OFF_BUCKLER = -3
-OFF_DAGGER = WEAPON_DAGGER
-OFF_SWORD = WEAPON_SWORD
-OFF_MACE = WEAPON_MACE
 
 MATERIAL_NORMAL = 0
 MATERIAL_GROMRIL = 1
@@ -516,8 +458,6 @@ ARMOR_WIZARD_ROBE = 7
 ARMOR_NINJA_GARB = 8
 ARMOR_ESHIN_ROBES = 9
 ARMOR_CHITIN = 10
-ARMOR_SEA_DRAGON_CLOAK = 11
-
 ARMOR_CODES = {
     "Sin Armadura": ARMOR_NONE,
     "Armadura Ligera": ARMOR_LIGHT,
@@ -530,15 +470,14 @@ ARMOR_CODES = {
     "Ropajes de Ninja": ARMOR_NINJA_GARB,
     "Ropajes de Asesino Eshin": ARMOR_ESHIN_ROBES,
     "Armadura Kitinoza": ARMOR_CHITIN,
-    "Capa de Dragón Marino": ARMOR_SEA_DRAGON_CLOAK,
 }
 
 PREPARATION_NONE = 0
 PREPARATION_CRIMSON_SHADE = 1
 PREPARATION_MANDRAKE_ROOT = 2
-PREPARATION_SHALLAYA_TEARS = 3
-PREPARATION_MAD_CAP = 4
-PREPARATION_HEAD_SPLITTER = 5
+PREPARATION_SHALLAYA_TEARS = 4
+PREPARATION_MAD_CAP = 8
+PREPARATION_HEAD_SPLITTER = 16
 
 PREPARATION_CODES = {
     "Ninguno": PREPARATION_NONE,
@@ -706,5 +645,3 @@ SKILL_SIGMAR_SIGNAL = 1 << 43
 SKILL_VALOUR = 1 << 44
 SKILL_STONE_SKULL = 1 << 45
 SKILL_LUCK = 1 << 46
-# Alias binario para configuraciones y extensiones anteriores a la unificación.
-SKILL_SCIMITAR_FENCER = SKILL_FENCER

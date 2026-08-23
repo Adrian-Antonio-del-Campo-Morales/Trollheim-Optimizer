@@ -11,11 +11,11 @@ El programa calcula estimaciones estadísticas. No sustituye al reglamento, al
 La versión portable es la opción más sencilla para Windows: consiste en un
 único archivo y no necesita instalación, Python ni compilación.
 
-[Descargar Trollheim Optimizer Portable 6.0.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v6.0.0/Trollheim-Optimizer-Portable-6.0.0.exe)
+[Descargar Trollheim Optimizer Portable 6.1.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v6.1.0/Trollheim-Optimizer-Portable-6.1.0.exe)
 
 Para utilizarla:
 
-1. Descarga `Trollheim-Optimizer-Portable-6.0.0.exe`.
+1. Descarga `Trollheim-Optimizer-Portable-6.1.0.exe`.
 2. Guarda el archivo donde quieras, por ejemplo en el escritorio o en una
    memoria USB.
 3. Haz doble clic sobre él para abrir el simulador.
@@ -36,8 +36,10 @@ repositorio antes de ejecutarlo.
 - Rivales aleatorios ponderados por perfil, dificultad y equipo legal.
 - Comparación de mejoras individuales y combinaciones de mejoras.
 - Comparación de armas, armaduras, objetos y consumibles con filtros legales por guerrero.
+- Reglas de la casa opcionales que alteran combate, armaduras y costes para todos los contendientes.
 - Resultados óptimos de armas y equipamiento con coste e Índice MOTTA.
 - Número de simulaciones configurable en cada análisis.
+- Cancelación en curso desde el mismo botón de simulación, sin publicar resultados parciales.
 
 El alcance, las decisiones de modelado y el trabajo pendiente se mantienen en
 [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
@@ -71,6 +73,15 @@ configuración de la muestra aleatoria. Cada análisis calculado se guarda en su
 propia hoja. **Cargar** recupera todo ese estado y los resultados. **Cargar
 Candidato** y **Cargar Enemigos** permiten reemplazar solamente esa parte del
 libro; la segunda opción activa automáticamente el rival configurable.
+
+La versión 6.1 usa exclusivamente el formato de libro V3. Los libros creados
+por versiones anteriores se rechazan y deben volver a configurarse; el programa
+no contiene conversores ni rutas de carga heredadas.
+
+La pestaña **Reglas de la casa** permite activar variantes globales. Se aplican
+al candidato y a todos los enemigos, incluidos los generados aleatoriamente.
+Las reglas activas también se guardan en el libro y aparecen descritas en la
+primera hoja.
 
 ### Índice MOTTA
 

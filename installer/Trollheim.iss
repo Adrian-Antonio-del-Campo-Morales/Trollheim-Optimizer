@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "4.2.0"
+  #define MyAppVersion "6.1.0"
 #endif
 
 #define MyAppName "Trollheim Optimizer"

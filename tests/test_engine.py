@@ -1,7 +1,9 @@
 import queue
+import threading
 import time
 
 import numpy as np
+import pytest
 
 import trollheim_simulator.engine as engine
 from trollheim_simulator.engine import (
@@ -15,7 +17,7 @@ from trollheim_simulator.engine import (
 )
 from trollheim_simulator.enemies import ENEMY_PROFILES
 from trollheim_simulator.rules import (
-    NORMAL_ENEMIES_DATABASE, TWO_HANDED_WEAPONS, WEAPON_UNARMED,
+    EQUIPMENT_SELECTOR_OPTIONS, POISONS, TWO_HANDED_WEAPONS, WEAPON_UNARMED,
 )
 from trollheim_simulator.ui import DEFAULT_COMBO_SIMULATIONS, TrollheimApp
 
@@ -62,7 +64,9 @@ def test_worker_runs_a_small_custom_matchup():
         "prueba",
         FIGHTER,
         "custom",
-        NORMAL_ENEMIES_DATABASE["Humano"] | {
+        FIGHTER | {
+            "HA": 3,
+            "I": 3,
             "skills": [],
             "main_weapon": "Espada",
             "off_hand": "Ninguna",
@@ -115,8 +119,20 @@ def test_random_enemy_equipment_is_legal_and_levels_are_applied():
 
 def test_enemy_variants_have_expected_shape():
     enemies, owners = _build_enemy_variants(["Zombi", "Vampiro"], 2, 123, 5)
-    assert enemies.shape == (10, 22)
+    assert enemies.shape == (10, 25)
     assert owners.tolist() == [0] * 5 + [1] * 5
+
+
+def test_house_rules_are_applied_to_random_enemy_variants():
+    enemies, _owners = _build_enemy_variants(
+        ["Zombi"], 0, 123, 2,
+        house_rule_config={
+            "house_rule_offhand_penalty": True,
+            "house_rule_hard_armour": True,
+        },
+    )
+    assert np.all(enemies[:, engine.FIGHTER_OFFHAND_HIT_PENALTY] == 1)
+    assert np.all(enemies[:, engine.FIGHTER_HARD_ARMOUR] == 1)
 
 
 def test_vectorized_engine_has_no_compilation_pause():
@@ -152,6 +168,50 @@ def test_simulation_batch_is_split_into_small_chunks(monkeypatch):
     )
     assert sizes == [100_000, 100_000, 50_000]
     assert (wins, resolved) == (total, total)
+
+
+def test_simulation_batch_honours_a_cancellation_request():
+    cancel_event = threading.Event()
+    cancel_event.set()
+    candidate = engine._make_fighter(FIGHTER)
+    enemies = np.asarray([engine._make_fighter(FIGHTER)])
+    with pytest.raises(engine.SimulationCancelled):
+        engine._simulate_batch(
+            candidate, enemies, np.zeros(100, dtype=np.int8), 100, 42,
+            cancel_event,
+        )
+
+
+def test_numpy_combat_checks_for_cancellation_during_resolution(monkeypatch):
+    class CancelAfterChecks:
+        def __init__(self):
+            self.checks = 0
+
+        def is_set(self):
+            self.checks += 1
+            return self.checks >= 3
+
+    monkeypatch.setattr(engine, "_simulate_simple_native", None)
+    candidate = engine._make_fighter(FIGHTER)
+    enemies = np.asarray([engine._make_fighter(FIGHTER)])
+    with pytest.raises(engine.SimulationCancelled):
+        engine._simulate_batch(
+            candidate, enemies, np.zeros(1_000, dtype=np.int8), 1_000, 42,
+            CancelAfterChecks(),
+        )
+
+
+def test_task_runner_stops_before_starting_when_cancelled():
+    cancel_event = threading.Event()
+    cancel_event.set()
+    task = (
+        "Single", "cancelar", FIGHTER, "custom", FIGHTER,
+        [], np.zeros(100, dtype=np.int8), 100, 42, True, None, 0, 0,
+    )
+    with pytest.raises(engine.SimulationCancelled):
+        TrollheimApp._run_tasks(
+            [task], None, 100, cancel_event=cancel_event
+        )
 
 
 def test_native_route_only_accepts_simple_fighters(monkeypatch):
@@ -273,12 +333,20 @@ def test_luck_amulet_is_not_an_upgrade_anymore():
 def test_equipment_catalog_contains_armour_objects_and_consumables():
     options = TrollheimApp._equipment_options()
     labels = {label for label, _kind, _value in options}
+    kinds = {label: kind for label, kind, _value in options}
     assert {"Armadura Ligera", "Casco", "Amuleto de la suerte"} <= labels
     assert {"Sombra Carmesí", "Loto Negro", "Saliva de Araña"} <= labels
     assert {"Hongos Sombrero Loco", "Hongos Pirakabezas"} <= labels
+    assert kinds["Capa de Dragón Marino"] == "cloak"
 
 
-def test_equipment_loadout_starts_without_optional_equipment():
+def test_candidate_equipment_menu_keeps_poisons_in_weapon_selectors():
+    assert set(EQUIPMENT_SELECTOR_OPTIONS).isdisjoint(
+        poison for poison in POISONS if poison != "Sin veneno"
+    )
+
+
+def test_equipment_loadout_preserves_initial_optional_equipment():
     candidate = FIGHTER | {
         "armor": "Armadura Pesada",
         "has_helmet": True,
@@ -289,8 +357,58 @@ def test_equipment_loadout_starts_without_optional_equipment():
         ("Amuleto de la suerte", "amulet", True),
     ))
     assert equipped["armor"] == "Armadura Ligera"
-    assert not equipped["has_helmet"]
+    assert equipped["has_helmet"]
     assert equipped["has_luck_amulet"]
+
+
+def test_sea_dragon_cloak_is_applied_as_optional_equipment():
+    candidate = FIGHTER | {"armor": "Armadura Ligera"}
+    equipped = TrollheimApp._apply_equipment_items(candidate, (
+        ("Capa de Dragón Marino", "cloak", True),
+    ))
+    assert equipped["armor"] == "Armadura Ligera"
+    assert equipped["has_sea_dragon_cloak"]
+    assert "Capa de Dragón Marino" in TrollheimApp._owned_optional_equipment(equipped)
+
+
+def test_selecting_owned_armour_or_helmet_keeps_the_exact_base_profile():
+    candidate = FIGHTER | {
+        "armor": "Cuero Endurecido", "has_helmet": True,
+        "main_poison": "Sin veneno", "offhand_poison": "Sin veneno",
+    }
+    helmet = TrollheimApp._apply_equipment_items(candidate, (
+        ("Casco", "helmet", True),
+    ))
+    leather = TrollheimApp._apply_equipment_items(candidate, (
+        ("Cuero Endurecido", "armor", "Cuero Endurecido"),
+    ))
+    assert helmet == candidate
+    assert leather == candidate
+    assert effective_fighter_key(helmet) == effective_fighter_key(candidate)
+    assert effective_fighter_key(leather) == effective_fighter_key(candidate)
+    task_tail = ("custom", FIGHTER, [], np.zeros(10, dtype=np.int8), 10, 42)
+    tasks = [
+        ("Single", "ESTADO BASE", candidate, *task_tail, True),
+        ("Single", "Casco", helmet, *task_tail, False),
+        ("Single", "Cuero Endurecido", leather, *task_tail, False),
+    ]
+    unique, aliases = TrollheimApp._deduplicate_tasks(tasks)
+    assert len(unique) == 1
+    assert [label for label, _is_base in aliases[("Single", "ESTADO BASE")]] == [
+        "ESTADO BASE", "Casco", "Cuero Endurecido",
+    ]
+
+
+def test_equipment_loadout_preserves_and_fills_initial_poison_slots():
+    candidate = FIGHTER | {
+        "main_poison": "Loto Negro", "offhand_poison": "Sin veneno",
+    }
+    equipped = TrollheimApp._apply_equipment_items(candidate, (
+        ("Loto Negro", "poison", "Loto Negro"),
+        ("Veneno Negro", "poison", "Veneno Negro"),
+    ))
+    assert equipped["main_poison"] == "Loto Negro"
+    assert equipped["offhand_poison"] == "Veneno Negro"
 
 
 def test_owned_equipment_is_deducted_once_from_combination_cost():
@@ -318,6 +436,22 @@ def test_only_poison_can_be_selected_twice():
     assert not legal((armor, armor))
     assert not legal((amulet, amulet))
     assert legal((poison, poison))
+
+
+def test_distinct_preparations_can_be_combined_but_not_duplicated():
+    first = ("Sombra Carmesí", "preparation", "Sombra Carmesí")
+    second = ("Raíz de Mandrágora", "preparation", "Raíz de Mandrágora")
+    legal = TrollheimApp._equipment_combination_is_legal
+    assert legal((first, second))
+    assert not legal((first, first))
+
+
+def test_equipment_loadout_accumulates_preparations():
+    equipped = TrollheimApp._apply_equipment_items(FIGHTER, (
+        ("Sombra Carmesí", "preparation", "Sombra Carmesí"),
+        ("Raíz de Mandrágora", "preparation", "Raíz de Mandrágora"),
+    ))
+    assert equipped["preparations"] == ["Sombra Carmesí", "Raíz de Mandrágora"]
 
 
 def test_equipment_loadouts_can_include_legal_triples():
@@ -434,6 +568,49 @@ def test_owned_weapons_are_deducted_once_regardless_of_hand():
     ) == (0.0, 40.0)
 
 
+def test_mirrored_simple_weapons_share_one_effective_profile_with_one_attack():
+    sword_dagger = FIGHTER | {
+        "A": 1, "main_weapon": "Espada", "off_hand": "Daga",
+        "main_weapon_material": "Gromril", "offhand_material": "Sin material",
+        "main_poison": "Loto Negro", "offhand_poison": "Sin veneno",
+    }
+    dagger_sword = FIGHTER | {
+        "A": 1, "main_weapon": "Daga", "off_hand": "Espada",
+        "main_weapon_material": "Sin material", "offhand_material": "Gromril",
+        "main_poison": "Sin veneno", "offhand_poison": "Loto Negro",
+    }
+    first = TrollheimApp._canonical_weapon_candidate(sword_dagger, "Dual")
+    second = TrollheimApp._canonical_weapon_candidate(dagger_sword, "Dual")
+    assert first == second
+    assert effective_fighter_key(first) == effective_fighter_key(second)
+    task_tail = ("custom", FIGHTER, [], np.zeros(10, dtype=np.int8), 10, 42)
+    tasks = [
+        ("Dual", "Espada || Daga", first, *task_tail, False),
+        ("Dual", "Daga || Espada", second, *task_tail, False),
+    ]
+    unique, aliases = TrollheimApp._deduplicate_tasks(tasks)
+    assert len(unique) == 1
+    assert [label for label, _is_base in aliases[("Dual", "Espada || Daga")]] == [
+        "Espada || Daga", "Daga || Espada",
+    ]
+
+
+def test_mirrored_weapons_remain_distinct_when_the_main_hand_matters():
+    two_attacks = FIGHTER | {
+        "A": 2, "main_weapon": "Espada", "off_hand": "Daga",
+    }
+    axe_master = FIGHTER | {
+        "A": 1, "main_weapon": "Hacha", "off_hand": "Daga",
+        "skills": ["Maestro del Hacha"],
+    }
+    assert TrollheimApp._canonical_weapon_candidate(
+        two_attacks, "Dual"
+    ) == two_attacks
+    assert TrollheimApp._canonical_weapon_candidate(
+        axe_master, "Dual"
+    ) == axe_master
+
+
 def test_every_warrior_owns_exactly_one_free_normal_dagger():
     costs = {"Daga": 2.0}
     assert TrollheimApp._weapon_acquisition_costs(
@@ -455,6 +632,29 @@ def test_empty_hands_have_zero_acquisition_cost_and_a_clear_label():
         "Ninguna", "Ninguna", "Sin material", "Sin material"
     ) == "Sin armas || Ninguna"
     assert engine._make_fighter(FIGHTER | {"main_weapon": "Ninguna"})[6] == WEAPON_UNARMED
+
+
+def test_house_rules_adjust_armour_and_junk_costs_with_ceiling():
+    class Flag:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    app = object.__new__(TrollheimApp)
+    app.house_rule_vars = {
+        "cheap_armour": Flag(True),
+        "expensive_junk": Flag(True),
+    }
+    adjusted = app._costs_with_house_rules({
+        "Armadura Ligera": 25.0, "Casco": 10.0, "Escudo": 5.0,
+        "Rodela": 5.0, "Maza": 3.0,
+    })
+    assert adjusted["Armadura Ligera"] == 13.0
+    assert adjusted["Casco"] == 5.0
+    assert adjusted["Escudo"] == adjusted["Rodela"] == 3.0
+    assert adjusted["Maza"] == adjusted["Honda"] == 5.0
 
 
 def test_weapon_export_includes_total_cost_and_motta_index():

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from openpyxl import load_workbook
+import pytest
 
 from trollheim_simulator.candidate_catalog import (
     equipment_costs_for_profile,
@@ -10,10 +11,11 @@ from trollheim_simulator.candidate_catalog import (
 )
 from trollheim_simulator.ui import TrollheimApp
 from trollheim_simulator.rules import SKILLS
-from trollheim_simulator.rules import SKILLS
 from trollheim_simulator.workbooks import (
+    CandidateWorkbookError,
     DATA_SHEET,
     ENEMIES_SHEET,
+    FORMAT_VERSION,
     RESULTS_INDEX_SHEET,
     RESULT_SHEET_PREFIX,
     SUMMARY_SHEET,
@@ -101,6 +103,15 @@ def test_equipment_costs_use_band_prices_and_expected_dice_values():
     assert equipment_costs_for_profile()["Amuleto de la suerte"] == 10.0
 
 
+def test_sea_dragon_cloak_is_special_equipment_not_body_armour():
+    corsair = find_profile("lustria-elfos-oscuros", "dark-elf-corsair")
+    options = set(equipment_options_for_profile(
+        "lustria-elfos-oscuros", "dark-elf-corsair"
+    ))
+    assert "Capa de Dragón Marino" not in corsair.armors
+    assert "Capa de Dragón Marino" in options
+
+
 def test_canonical_candidate_catalog_is_complete():
     bands = load_bands()
     assert len(bands) == 34
@@ -111,6 +122,21 @@ def test_canonical_candidate_catalog_is_complete():
     assert "Armadura Ligera" in assassin.armors
     assert assassin.helmet_allowed
     assert "Golpe Poderoso" in assassin.skills
+
+
+def test_attack_replacement_skills_are_not_hidden_by_starting_attacks():
+    mutant = find_profile("trollheim-possessed", "mutant")
+    black_knife = find_profile(
+        "chaos-streets-deathbringers", "black-knife"
+    )
+    young_claw = find_profile(
+        "chaos-streets-deathbringers", "young-claw"
+    )
+    assert mutant.stats["A"] == 1
+    assert "Estocada Mortal" in mutant.skills
+    for profile in (black_knife, young_claw):
+        assert profile.stats["A"] == 1
+        assert "Golpe Mortal" in profile.skills
 
 
 def test_natural_profiles_receive_a_neutral_natural_weapon():
@@ -177,11 +203,21 @@ def test_high_elf_profiles_keep_distinct_skill_columns_and_restrictions():
     } <= set(explorer.skills).intersection(SKILLS)
 
 
-def test_candidate_workbook_round_trip_and_preserves_result_sheets(tmp_path: Path):
+def test_candidate_workbook_round_trip_uses_only_the_current_format(tmp_path: Path):
     path = tmp_path / "candidato.xlsx"
-    save_candidate_workbook(path, _payload())
+    payload = _payload()
+    payload["config"].update({
+        "has_sea_dragon_cloak": True,
+        "preparations": ["Sombra Carmesí", "Raíz de Mandrágora"],
+        "main_poison": "Loto Negro",
+    })
+    payload["house_rules"] = {
+        "anti_dual": True, "hard_armour": True, "cheap_armour": False,
+    }
+    save_candidate_workbook(path, payload)
     restored = load_candidate_workbook(path)
     assert restored["config"]["candidate_name"] == "Rata con papeles"
+    assert restored["house_rules"]["anti_dual"] is True
     assert [profile["enemy_name"] for profile in restored["enemies"]["profiles"]] == [
         "Bruto", "Rápido"
     ]
@@ -201,16 +237,27 @@ def test_candidate_workbook_round_trip_and_preserves_result_sheets(tmp_path: Pat
     ]
     assert "CONSULTA RÁPIDA" in summary_values
     assert "Habilidad: Golpe Poderoso" in summary_values
-    workbook.create_sheet("Mejoras 001")["A1"] = "resultado futuro"
-    workbook.save(path)
-
+    assert "REGLAS DE LA CASA ACTIVAS" in summary_values
+    assert "Anti Dos Armas" in summary_values
+    assert "Armaduras Duras" in summary_values
+    assert "Armaduras Baratas" not in summary_values
+    assert any(
+        value and all(item in str(value) for item in (
+            "Capa de Dragón Marino", "Sombra Carmesí", "Raíz de Mandrágora",
+            "Loto Negro",
+        ))
+        for value in summary_values
+    )
     changed = _payload()
     changed["config"]["HA"] = 5
     save_candidate_workbook(path, changed)
     workbook = load_workbook(path, data_only=False)
-    assert "Mejoras 001" in workbook.sheetnames
-    assert workbook["Mejoras 001"]["A1"].value == "resultado futuro"
     assert load_candidate_workbook(path)["config"]["HA"] == 5
+
+    workbook[DATA_SHEET]["A1"] = "TROLLHEIM_WORKBOOK_V2"
+    workbook.save(path)
+    with pytest.raises(CandidateWorkbookError, match="no es compatible"):
+        load_candidate_workbook(path)
 
 
 def test_workbook_saves_and_loads_each_simulation_on_its_own_sheet(tmp_path: Path):
@@ -218,7 +265,8 @@ def test_workbook_saves_and_loads_each_simulation_on_its_own_sheet(tmp_path: Pat
     payload = _payload()
     payload["results"] = [
         {
-            "target": "results", "title": "Comparativa de mejoras",
+            "format_version": FORMAT_VERSION,
+            "target": "combos", "title": "Mejoras",
             "generated_at": "2026-08-23T10:30:00", "iterations": 25000,
             "opponent": "Rival configurable: Bruto", "view": "optimal",
             "headers": ["Mejora", "Mano libre %", "Impacto %"],
@@ -227,6 +275,7 @@ def test_workbook_saves_and_loads_each_simulation_on_its_own_sheet(tmp_path: Pat
             "card_data": [{"Single": 41.25}, "Single", {"Single": "Espada"}],
         },
         {
+            "format_version": FORMAT_VERSION,
             "target": "weapons", "title": "Configuraciones de armas",
             "generated_at": "2026-08-23T10:35:00", "iterations": 10000,
             "opponent": "Rival configurable: Bruto", "view": "equipment",
@@ -238,12 +287,12 @@ def test_workbook_saves_and_loads_each_simulation_on_its_own_sheet(tmp_path: Pat
 
     save_candidate_workbook(path, payload)
     restored = load_candidate_workbook(path)
-    assert [result["target"] for result in restored["results"]] == ["results", "weapons"]
+    assert [result["target"] for result in restored["results"]] == ["combos", "weapons"]
 
     workbook = load_workbook(path, data_only=False)
     result_sheets = [name for name in workbook.sheetnames if name.startswith(RESULT_SHEET_PREFIX)]
     assert len(result_sheets) == 2
-    assert workbook[RESULTS_INDEX_SHEET]["B7"].value == "Comparativa de mejoras"
+    assert workbook[RESULTS_INDEX_SHEET]["B7"].value == "Mejoras"
     assert workbook[RESULTS_INDEX_SHEET]["C8"].value == 10000
     first_values = [cell.value for row in workbook[result_sheets[0]].iter_rows() for cell in row]
     assert "Golpe Poderoso" in first_values

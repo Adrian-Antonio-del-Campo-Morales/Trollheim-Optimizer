@@ -14,6 +14,9 @@ except ImportError:
 FIGHTER_OFFHAND_HIT_PENALTY = 19
 FIGHTER_DUAL_HIT_PENALTY = 20
 FIGHTER_UNDEAD_OR_POSSESSED = 21
+FIGHTER_BETTER_ARMOUR = 22
+FIGHTER_HARD_ARMOUR = 23
+FIGHTER_USEFUL_SHIELDS = 24
 
 PRIORITY_FIRST = 0
 PRIORITY_NORMAL = 1
@@ -37,6 +40,15 @@ STATE_PARALYZED = 3
 STATE_OUT = 4
 
 
+class SimulationCancelled(RuntimeError):
+    """Interrumpe de forma controlada una simulación solicitada por el usuario."""
+
+
+def _raise_if_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise SimulationCancelled("Simulación cancelada por el usuario.")
+
+
 def _skill_mask(skills):
     mask = 0
     for skill in skills:
@@ -51,9 +63,6 @@ def _skill_mask(skills):
         elif skill == "Curtido":
             mask |= SKILL_SEASONED
         elif skill == "Experto en Esgrima":
-            mask |= SKILL_FENCER
-        elif skill == "Experto en Esgrima (Cimitarra)":
-            # Nombre antiguo conservado al cargar fichas previas.
             mask |= SKILL_FENCER
         elif skill == "Carga Imparable":
             mask |= SKILL_UNSTOPPABLE
@@ -152,7 +161,7 @@ def _armor_base_save(armor):
         "Ropajes de Ninja", "Ropajes de Asesino Eshin", "Armadura Kitinoza",
     ):
         return 6
-    if armor in ("Armadura Pesada", "Armadura de Ithilmar", "Capa de Dragón Marino"):
+    if armor in ("Armadura Pesada", "Armadura de Ithilmar"):
         return 5
     if armor in ("Armadura de Gromril", "Armadura de Placas"):
         return 4
@@ -166,24 +175,19 @@ def _make_fighter(config):
         main_name, WEAPON_SWORD
     )
     off = OFFHAND_CODES.get(config.get("off_hand", "Ninguna"), OFF_NONE)
-    if main == WEAPON_SUN_GAUNTLET:
-        # El guantelete solar es siempre el arma secundaria. Los datos antiguos
-        # que lo guardasen como principal se normalizan sin perder el objeto.
-        main = WEAPON_DAGGER
-        off = WEAPON_SUN_GAUNTLET
-    legacy_material = config.get("weapon_material", "Sin material")
     main_material = MATERIAL_CODES.get(
-        config.get("main_weapon_material", legacy_material), MATERIAL_NORMAL
+        config.get("main_weapon_material", "Sin material"), MATERIAL_NORMAL
     )
     offhand_material = MATERIAL_CODES.get(
         config.get("offhand_material", "Sin material"), MATERIAL_NORMAL
     )
     skills = _skill_mask(config.get("skills", []))
-    preparation = PREPARATION_CODES.get(
-        config.get("preparation", "Ninguno"), PREPARATION_NONE
-    )
+    preparation_names = config.get("preparations", ())
+    preparation = PREPARATION_NONE
+    for preparation_name in preparation_names:
+        preparation |= PREPARATION_CODES.get(preparation_name, PREPARATION_NONE)
     if main == WEAPON_BALL_AND_CHAIN:
-        preparation = PREPARATION_HEAD_SPLITTER
+        preparation |= PREPARATION_HEAD_SPLITTER
     main_poison = POISON_CODES.get(
         config.get("main_poison", "Sin veneno"), POISON_NONE
     )
@@ -191,6 +195,7 @@ def _make_fighter(config):
         config.get("offhand_poison", "Sin veneno"), POISON_NONE
     )
     armor_name = config.get("armor", "Sin Armadura")
+    has_sea_dragon_cloak = bool(config.get("has_sea_dragon_cloak", False))
     armor_code = ARMOR_CODES.get(armor_name, ARMOR_NONE)
     has_helmet = bool(config.get("has_helmet", False))
     if main == WEAPON_BALL_AND_CHAIN:
@@ -220,8 +225,14 @@ def _make_fighter(config):
         off_weapon = off
 
     armor_save = _armor_base_save(armor_name)
+    if armor_code != ARMOR_NONE and config.get("house_rule_better_armour", False):
+        armor_save -= 1
+    if has_sea_dragon_cloak:
+        armor_save = min(armor_save, 5)
     if off == OFF_SHIELD and not (_is_two_handed(main) or _is_paired(main)):
         armor_save -= 1
+        if config.get("house_rule_useful_shields", False):
+            armor_save -= 1
     if skills & SKILL_VERY_TOUGH:
         armor_save -= 1
 
@@ -234,8 +245,8 @@ def _make_fighter(config):
     return np.array(
         [
             config["HA"],
-            base_strength + (preparation == PREPARATION_CRIMSON_SHADE),
-            config["R"] + (preparation == PREPARATION_MANDRAKE_ROOT),
+            base_strength + bool(preparation & PREPARATION_CRIMSON_SHADE),
+            config["R"] + bool(preparation & PREPARATION_MANDRAKE_ROOT),
             base_wounds,
             config["I"],
             base_attacks,
@@ -255,6 +266,9 @@ def _make_fighter(config):
             int(bool(config.get("house_rule_offhand_penalty", False))),
             int(bool(config.get("house_rule_dual_penalty", False))),
             int(bool(config.get("undead_or_possessed", False))),
+            int(bool(config.get("house_rule_better_armour", False))),
+            int(bool(config.get("house_rule_hard_armour", False))),
+            int(bool(config.get("house_rule_useful_shields", False))),
         ],
         dtype=np.int64,
     )
@@ -393,7 +407,9 @@ def _weapon_attacks_first(weapon):
 
 
 def _has_frenzy_preparation(fighter):
-    return int(fighter[14]) in (PREPARATION_MAD_CAP, PREPARATION_HEAD_SPLITTER)
+    return bool(
+        int(fighter[14]) & (PREPARATION_MAD_CAP | PREPARATION_HEAD_SPLITTER)
+    )
 
 
 def _random_candidate_charges(rng, total):
@@ -619,6 +635,12 @@ def _house_rule_hit_penalty(attacker, attack_index):
     )
 
 
+def _strength_armour_penalty(attacker, strength):
+    """Penalización a la salvación causada por la Fuerza del atacante."""
+    threshold = 4 if int(attacker[FIGHTER_HARD_ARMOUR]) else 3
+    return max(0, int(strength) - threshold)
+
+
 def _attack_strength(attacker, weapon, defender_is_seasoned, first_round=True, attack_index=-1):
     strength = int(attacker[1])
     if int(attacker[9]) & SKILL_POWER:
@@ -734,7 +756,9 @@ def _combat_initiative(fighter, crimson_bonus=0, first_round=False):
 
 
 
-def _simulate_batch(candidate, enemies, enemy_indices, total_sims, seed):
+def _simulate_batch(
+    candidate, enemies, enemy_indices, total_sims, seed, cancel_event=None,
+):
     """Simula el lote por variantes homogéneas usando arrays de NumPy."""
     rng = np.random.default_rng(seed)
     wins = 0
@@ -746,8 +770,10 @@ def _simulate_batch(candidate, enemies, enemy_indices, total_sims, seed):
     grouped_counts = np.zeros(len(unique_enemies), dtype=np.int64)
     np.add.at(grouped_counts, inverse, counts[active])
     for enemy, amount in zip(unique_enemies, grouped_counts):
+        _raise_if_cancelled(cancel_event)
         remaining = int(amount)
         while remaining:
+            _raise_if_cancelled(cancel_event)
             chunk = min(remaining, SIMULATION_CHUNK_SIZE)
             if _can_use_native_kernel(candidate, enemy):
                 native_seed = int(rng.bit_generator.random_raw())
@@ -756,7 +782,7 @@ def _simulate_batch(candidate, enemies, enemy_indices, total_sims, seed):
                 )
             else:
                 batch_wins, batch_resolved = _simulate_homogeneous_batch(
-                    candidate, enemy, chunk, rng
+                    candidate, enemy, chunk, rng, cancel_event
                 )
             wins += batch_wins
             resolved += batch_resolved
@@ -795,9 +821,10 @@ def _can_use_native_kernel(candidate, enemy):
             return False
         if int(fighter[17]) in special_armour:
             return False
-        if int(fighter[FIGHTER_OFFHAND_HIT_PENALTY]) or int(
-            fighter[FIGHTER_DUAL_HIT_PENALTY]
-        ):
+        if any(int(fighter[index]) for index in (
+            FIGHTER_OFFHAND_HIT_PENALTY, FIGHTER_DUAL_HIT_PENALTY,
+            FIGHTER_BETTER_ARMOUR, FIGHTER_HARD_ARMOUR, FIGHTER_USEFUL_SHIELDS,
+        )):
             return False
     return True
 
@@ -865,7 +892,7 @@ def _vector_automatic_hit(rng, rows, defender, wounds, states, strength, weapon)
                 _vector_injury(
                     rng, injured.size, weapon, bool(defender[10]),
                     bool(int(defender[9]) & SKILL_SPRING_UP),
-                    (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                    (bool(int(defender[14]) & PREPARATION_MANDRAKE_ROOT)
                      or bool(int(defender[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
@@ -901,7 +928,7 @@ def _vector_cutlass_counterattack(rng, rows, attacker, defender, wounds, states)
                 _vector_injury(
                     rng, injured.size, WEAPON_DAGGER, bool(attacker[10]),
                     bool(int(attacker[9]) & SKILL_SPRING_UP),
-                    (int(attacker[14]) == PREPARATION_MANDRAKE_ROOT
+                    (bool(int(attacker[14]) & PREPARATION_MANDRAKE_ROOT)
                      or bool(int(attacker[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
@@ -967,7 +994,7 @@ def _vector_attack_phase(
                 _vector_injury(
                     rng, injured.size, WEAPON_CENSER, bool(attacker[10]),
                     bool(int(attacker[9]) & SKILL_SPRING_UP),
-                    (int(attacker[14]) == PREPARATION_MANDRAKE_ROOT
+                    (bool(int(attacker[14]) & PREPARATION_MANDRAKE_ROOT)
                      or bool(int(attacker[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
@@ -1036,6 +1063,7 @@ def _vector_attack_phase(
         rolls[automatic] = 6
         reroll = np.zeros(rows.size, dtype=bool)
         house_penalty = _house_rule_hit_penalty(attacker, source_index)
+        penalties[attack] = house_penalty
         adjusted_hit_target = min(6, hit_target + house_penalty)
         adjusted_charge_hit_target = min(6, charge_hit_target + house_penalty)
         if (
@@ -1246,7 +1274,7 @@ def _vector_attack_phase(
         weapon = int(weapons[attack])
         source_index = int(source_indices[attack])
         poison = _poison_for_attack(attacker, source_index)
-        if int(defender[14]) == PREPARATION_SHALLAYA_TEARS:
+        if int(defender[14]) & PREPARATION_SHALLAYA_TEARS:
             poison = POISON_NONE
         if poison == POISON_SPIDER_SPIT:
             paralyzed = rng.integers(1, 7, targets.size) > int(defender[2])
@@ -1273,7 +1301,7 @@ def _vector_attack_phase(
                 defender_state[injured] = _vector_injury(
                     rng, injured.size, weapon, bool(defender[10]),
                     bool(int(defender[9]) & SKILL_SPRING_UP),
-                    (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                    (bool(int(defender[14]) & PREPARATION_MANDRAKE_ROOT)
                      or bool(int(defender[9]) & SKILL_IGNORE_PAIN)),
                     False, int(weapon == WEAPON_PLAGUE_DAGGER),
                 )
@@ -1282,7 +1310,7 @@ def _vector_attack_phase(
             first_round, source_index
         )
         if (
-            int(defender[14]) == PREPARATION_SHALLAYA_TEARS
+            int(defender[14]) & PREPARATION_SHALLAYA_TEARS
             and _poison_for_attack(attacker, source_index) in (POISON_BLACK_VENOM, POISON_REPTILE)
         ):
             strength -= 1
@@ -1403,17 +1431,23 @@ def _vector_attack_phase(
 
         armour_strength = _armour_strength(attacker, weapon, first_round, source_index)
         if (
-            int(defender[14]) == PREPARATION_SHALLAYA_TEARS
+            int(defender[14]) & PREPARATION_SHALLAYA_TEARS
             and _poison_for_attack(attacker, source_index) == POISON_BLACK_VENOM
         ):
             armour_strength -= 1
         save_target_value = (
             _nb_armour_save(int(defender[8]), weapon)
-            + max(0, armour_strength - 3)
+            + _strength_armour_penalty(attacker, armour_strength)
             + _extra_armour_penalty(attacker, weapon, source_index)
         )
         save_target = np.full(targets.size, save_target_value, dtype=np.int8)
-        if int(attacker[9]) & SKILL_CHARGE_STRENGTH and armour_strength >= 3:
+        charge_penetration_threshold = (
+            4 if int(attacker[FIGHTER_HARD_ARMOUR]) else 3
+        )
+        if (
+            int(attacker[9]) & SKILL_CHARGE_STRENGTH
+            and armour_strength >= charge_penetration_threshold
+        ):
             save_target[charging_rows[targets]] += 1
         saved = np.zeros(targets.size, dtype=bool)
         can_save = ~ignore_armour & (save_target <= 6)
@@ -1479,7 +1513,7 @@ def _vector_attack_phase(
                         injury = _vector_injury(
                             rng, injured.size, weapon, bool(defender[10]),
                             bool(int(defender[9]) & SKILL_SPRING_UP),
-                            (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                            (bool(int(defender[14]) & PREPARATION_MANDRAKE_ROOT)
                              or bool(int(defender[9]) & SKILL_IGNORE_PAIN)),
                             _material_for_attack(attacker, source_index) == MATERIAL_DARK_STEEL,
                             modifier,
@@ -1505,7 +1539,7 @@ def _vector_attack_phase(
         attack += 1
 
 
-def _simulate_homogeneous_batch(candidate, enemy, total, rng):
+def _simulate_homogeneous_batch(candidate, enemy, total, rng, cancel_event=None):
     wounds1 = np.full(total, int(candidate[3]), dtype=np.int16)
     wounds2 = np.full(total, int(enemy[3]), dtype=np.int16)
     state1 = np.zeros(total, dtype=np.int8)
@@ -1514,11 +1548,11 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
     amulet2 = np.zeros(total, dtype=bool)
     crimson1 = (
         rng.integers(1, 4, total)
-        if int(candidate[14]) == PREPARATION_CRIMSON_SHADE else np.zeros(total, dtype=np.int8)
+        if int(candidate[14]) & PREPARATION_CRIMSON_SHADE else np.zeros(total, dtype=np.int8)
     )
     crimson2 = (
         rng.integers(1, 4, total)
-        if int(enemy[14]) == PREPARATION_CRIMSON_SHADE else np.zeros(total, dtype=np.int8)
+        if int(enemy[14]) & PREPARATION_CRIMSON_SHADE else np.zeros(total, dtype=np.int8)
     )
     uses_nightshade = POISON_NIGHTSHADE in (
         int(candidate[15]), int(candidate[16]), int(enemy[15]), int(enemy[16]),
@@ -1551,6 +1585,7 @@ def _simulate_homogeneous_batch(candidate, enemy, total, rng):
     enemy_charges = ~candidate_charges
 
     for phase in range(100):
+        _raise_if_cancelled(cancel_event)
         unresolved = (state1 != STATE_OUT) & (state2 != STATE_OUT)
         if not unresolved.any():
             break
@@ -1749,9 +1784,10 @@ def _random_enemy_config(name, level, rng):
     config["main_weapon"] = _weighted_choice(rng, equipment["main"])
     config["off_hand"] = _weighted_choice(rng, equipment["off"])
     config["armor"] = _weighted_choice(rng, equipment["armor"])
-    config["weapon_material"] = "Normal"
+    config["main_weapon_material"] = "Normal"
+    config["offhand_material"] = "Normal"
     config["has_luck_amulet"] = False
-    config["preparation"] = "Ninguno"
+    config["preparations"] = []
     config["main_poison"] = "Sin veneno"
     config["offhand_poison"] = "Sin veneno"
     consumables = equipment.get("consumables", [])
@@ -1768,7 +1804,7 @@ def _random_enemy_config(name, level, rng):
             int(rng.choice(len(consumables), p=weights))
         ]
         if kind == "preparation":
-            config["preparation"] = item_name
+            config["preparations"].append(item_name)
         elif kind == "poison":
             config["main_poison"] = item_name
     helmet = equipment.get("helmet")
@@ -1791,24 +1827,34 @@ def _random_enemy_config(name, level, rng):
     return config
 
 
-def _build_enemy_variants(names, level, seed, variants_per_profile=24):
+def _build_enemy_variants(
+    names, level, seed, variants_per_profile=24, house_rule_config=None,
+):
     rng = np.random.default_rng(seed)
     fighters = []
     owners = []
     for owner, name in enumerate(names):
         for _ in range(variants_per_profile):
-            fighters.append(_make_fighter(_random_enemy_config(name, level, rng)))
+            config = _random_enemy_config(name, level, rng)
+            if house_rule_config:
+                config.update(house_rule_config)
+            fighters.append(_make_fighter(config))
             owners.append(owner)
     return np.stack(fighters), np.asarray(owners, dtype=np.int64)
 
 
-def _cached_enemy_variants(names, level):
-    key = (tuple(names), int(level))
+def _cached_enemy_variants(names, level, house_rule_config=None):
+    house_rule_config = house_rule_config or {}
+    rule_key = tuple(sorted(
+        (key, bool(value)) for key, value in house_rule_config.items() if value
+    ))
+    key = (tuple(names), int(level), rule_key)
     variants = _ENEMY_VARIANT_CACHE.get(key)
     if variants is None:
         # El catálogo se comparte entre todas las mejoras de la misma ejecución.
         variants = _build_enemy_variants(
-            key[0], key[1], 17_071 + key[1] * 997, ENEMY_VARIANTS_PER_PROFILE
+            key[0], key[1], 17_071 + key[1] * 997, ENEMY_VARIANTS_PER_PROFILE,
+            dict(rule_key),
         )[0]
         _ENEMY_VARIANT_CACHE[key] = variants
     return variants
@@ -1816,12 +1862,7 @@ def _cached_enemy_variants(names, level):
 
 def _build_cumulative_weights(names):
     weights = np.array(
-        [
-            ENEMY_PROFILES[name]["weight"]
-            if name in ENEMY_PROFILES
-            else RACIAL_WEIGHTS[name]
-            for name in names
-        ],
+        [ENEMY_PROFILES[name]["weight"] for name in names],
         dtype=np.float64,
     )
     cumulative = np.cumsum(weights)
@@ -1846,12 +1887,18 @@ def _generate_shared_enemy_selection(names, total_simulations, seed, variants_pe
 
 def run_single_task_optimized(args):
     enemy_level = int(args[12]) if len(args) > 12 else 0
+    cancel_event = args[13] if len(args) > 13 else None
     (
         mode, label, candidate_dict, enemy_mode, custom_enemy_dict,
         active_pool_names, enemy_indices, total_sims, seed, is_base,
         progress_queue, task_id,
     ) = args[:12]
 
+    house_rule_config = {
+        config_key: bool(candidate_dict.get(config_key, False))
+        for config_key in HOUSE_RULE_CONFIG_KEYS.values()
+    }
+    _raise_if_cancelled(cancel_event)
     candidate = _make_fighter(candidate_dict)
     if enemy_mode == "custom":
         custom_enemy_configs = (
@@ -1864,6 +1911,7 @@ def run_single_task_optimized(args):
             for enemy_config in custom_enemy_configs:
                 for _ in range(24):
                     config = dict(enemy_config)
+                    config.update(house_rule_config)
                     config["skills"] = list(enemy_config.get("skills", []))
                     for _ in range(enemy_level):
                         skill_pool = enemy_config.get("allowed_upgrade_skills", SKILLS)
@@ -1879,9 +1927,14 @@ def run_single_task_optimized(args):
                     configs.append(_make_fighter(config))
             enemies = np.stack(configs)
         else:
-            enemies = np.stack([_make_fighter(config) for config in custom_enemy_configs])
+            enemies = np.stack([
+                _make_fighter(dict(config, **house_rule_config))
+                for config in custom_enemy_configs
+            ])
     else:
-        enemies = _cached_enemy_variants(active_pool_names, enemy_level)
+        enemies = _cached_enemy_variants(
+            active_pool_names, enemy_level, house_rule_config
+        )
 
     if enemy_mode == "custom" and len(enemies) > 1 and (
         len(enemy_indices) != total_sims or int(np.max(enemy_indices, initial=0)) >= len(enemies)
@@ -1890,7 +1943,7 @@ def run_single_task_optimized(args):
         enemy_indices = selection_rng.integers(0, len(enemies), total_sims, dtype=np.int64)
 
     wins, resolved = _simulate_batch(
-        candidate, enemies, enemy_indices, total_sims, seed,
+        candidate, enemies, enemy_indices, total_sims, seed, cancel_event,
     )
     if progress_queue is not None:
         progress_queue.put(("chunk", task_id, total_sims))

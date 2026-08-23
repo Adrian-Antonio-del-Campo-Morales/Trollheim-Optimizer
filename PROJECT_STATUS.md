@@ -16,7 +16,7 @@ Están cubiertos:
 - las modificaciones finales de Trollheim aplicables al duelo;
 - armas generales y exclusivas con efecto directo;
 - armaduras, protecciones, materiales, drogas, venenos y consumibles;
-- habilidades visibles en el simulador;
+- habilidades de efecto directo implementadas y verificadas por el motor;
 - rivales configurables y perfiles aleatorios ponderados con equipo legal.
 
 Quedan fuera de alcance el movimiento, terreno, combates múltiples, psicología,

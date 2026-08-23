@@ -2,6 +2,7 @@
 
 import os
 import math
+import multiprocessing
 import queue
 import random
 import re
@@ -10,7 +11,7 @@ import time
 import tkinter as tk
 import unicodedata
 from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from itertools import combinations, combinations_with_replacement
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
@@ -18,6 +19,7 @@ import numpy as np
 
 from .engine import (
     ENEMY_VARIANTS_PER_PROFILE,
+    SimulationCancelled,
     _generate_shared_enemy_selection,
     effective_fighter_key,
     run_task_batch,
@@ -39,7 +41,12 @@ from .candidate_catalog import (
     weapon_descriptions,
 )
 from .rules import *
-from .workbooks import CandidateWorkbookError, load_candidate_workbook, save_candidate_workbook
+from .workbooks import (
+    FORMAT_VERSION,
+    CandidateWorkbookError,
+    load_candidate_workbook,
+    save_candidate_workbook,
+)
 
 
 COMBAT_MODES = (
@@ -292,13 +299,20 @@ class WarriorConfigFrame(ttk.LabelFrame):
 
         self.eq_main_material = tk.StringVar(value=WEAPON_MATERIALS[0])
         self.eq_off_material = tk.StringVar(value=WEAPON_MATERIALS[0])
+        self.eq_main_poison = tk.StringVar(value="Sin veneno")
+        self.eq_off_poison = tk.StringVar(value="Sin veneno")
 
-        self.eq_has_helmet = tk.BooleanVar(
-            value=False
-        )
+        self.equipment_vars = {
+            name: tk.BooleanVar(value=False)
+            for name in EQUIPMENT_SELECTOR_OPTIONS
+        }
+        self.eq_has_helmet = self.equipment_vars["Casco"]
+        self.equipment_button_text = tk.StringVar(value="Ninguno ▾")
+        self._equipment_menu_indices = {}
+        self._allowed_equipment = set(EQUIPMENT_SELECTOR_OPTIONS)
 
         self.eq_armor = tk.StringVar(
-            value=ARMORS[0]
+            value=BODY_ARMORS[0]
         )
         self.show_house_rules = show_house_rules
         self.house_rule_offhand_penalty = tk.BooleanVar(value=False)
@@ -468,6 +482,18 @@ class WarriorConfigFrame(ttk.LabelFrame):
             state="readonly", width=20,
         )
         self.cb_main_material.grid(row=2, column=1, sticky="ew", padx=(2, 7), pady=2)
+        ttk.Label(main_hand, text="Veneno:").grid(
+            row=3, column=0, sticky="e", padx=(7, 2), pady=2
+        )
+        self.cb_main_poison = ttk.Combobox(
+            main_hand, textvariable=self.eq_main_poison, values=POISONS,
+            state="readonly", width=20,
+        )
+        self.cb_main_poison.grid(row=3, column=1, sticky="ew", padx=(2, 7), pady=2)
+        ToolTip(
+            self.cb_main_poison,
+            lambda: POISON_DESCRIPTIONS.get(self.eq_main_poison.get(), ""),
+        )
 
         off_hand = ttk.LabelFrame(eq_frame, text=" Mano secundaria ")
         off_hand.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
@@ -496,6 +522,18 @@ class WarriorConfigFrame(ttk.LabelFrame):
             state="readonly", width=20,
         )
         self.cb_off_material.grid(row=2, column=1, sticky="ew", padx=(2, 7), pady=2)
+        ttk.Label(off_hand, text="Veneno:").grid(
+            row=3, column=0, sticky="e", padx=(7, 2), pady=2
+        )
+        self.cb_off_poison = ttk.Combobox(
+            off_hand, textvariable=self.eq_off_poison, values=POISONS,
+            state="readonly", width=20,
+        )
+        self.cb_off_poison.grid(row=3, column=1, sticky="ew", padx=(2, 7), pady=2)
+        ToolTip(
+            self.cb_off_poison,
+            lambda: POISON_DESCRIPTIONS.get(self.eq_off_poison.get(), ""),
+        )
 
         ttk.Separator(eq_frame, orient="horizontal").grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=5
@@ -513,7 +551,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.cb_armor = ttk.Combobox(
             armor_cell,
             textvariable=self.eq_armor,
-            values=ARMORS,
+            values=BODY_ARMORS,
             state="readonly",
             width=18,
         )
@@ -521,13 +559,27 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.cb_armor.bind("<<ComboboxSelected>>", self.on_equipment_change)
         ToolTip(self.cb_armor, lambda: armour_descriptions().get(self.eq_armor.get(), ""))
 
-        self.chk_helmet = ttk.Checkbutton(
-            defense,
-            text="Casco",
-            variable=self.eq_has_helmet,
+        equipment_cell = ttk.Frame(defense)
+        equipment_cell.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        equipment_cell.columnconfigure(1, weight=1)
+        ttk.Label(equipment_cell, text="Equipamiento:").grid(
+            row=0, column=0, sticky="e", padx=(0, 4)
         )
-        self.chk_helmet.grid(row=0, column=1)
-
+        self.equipment_button = ttk.Menubutton(
+            equipment_cell,
+            textvariable=self.equipment_button_text,
+            width=25,
+        )
+        self.equipment_button.grid(row=0, column=1, sticky="ew")
+        self.equipment_menu = tk.Menu(self.equipment_button, tearoff=False)
+        self.equipment_button.configure(menu=self.equipment_menu)
+        for name in EQUIPMENT_SELECTOR_OPTIONS:
+            self.equipment_menu.add_checkbutton(
+                label=name,
+                variable=self.equipment_vars[name],
+                command=lambda item=name: self._equipment_selection_changed(item),
+            )
+            self._equipment_menu_indices[name] = self.equipment_menu.index("end")
         self.interactable_widgets.extend(
             [
                 self.cb_main,
@@ -536,8 +588,10 @@ class WarriorConfigFrame(ttk.LabelFrame):
                 self.cb_off_exclusive,
                 self.cb_main_material,
                 self.cb_off_material,
+                self.cb_main_poison,
+                self.cb_off_poison,
                 self.cb_armor,
-                self.chk_helmet,
+                self.equipment_button,
             ]
         )
 
@@ -654,32 +708,52 @@ class WarriorConfigFrame(ttk.LabelFrame):
         if profile is None:
             main_allowed = tuple(WEAPONS_MAIN)
             off_allowed = tuple(OFF_HAND_OPTIONS)
-            armor_allowed = tuple(ARMORS)
+            armor_allowed = tuple(BODY_ARMORS)
             material_allowed = tuple(WEAPON_MATERIALS)
             skill_allowed = set(GENERAL_SKILL_DESCRIPTIONS) | set(extra_skills)
             helmet_allowed = True
+            equipment_allowed = set(EQUIPMENT_SELECTOR_OPTIONS)
+            poison_allowed = set(POISONS)
         else:
             main_allowed = usable_main_weapons(profile)
             off_allowed = usable_offhand_options(profile)
-            armor_allowed = ("Sin Armadura", *profile.armors)
+            armor_allowed = (
+                "Sin Armadura",
+                *(armor for armor in profile.armors if armor in BODY_ARMORS),
+            )
             material_allowed = profile.materials
             skill_allowed = set(profile.skills)
             helmet_allowed = profile.helmet_allowed
+            equipment_allowed = set(equipment_options_for_profile(
+                profile.band_id, profile.profile_id
+            )).intersection(EQUIPMENT_SELECTOR_OPTIONS)
+            if not helmet_allowed:
+                equipment_allowed.discard("Casco")
+            poison_allowed = {"Sin veneno"}.union(
+                set(equipment_options_for_profile(
+                    profile.band_id, profile.profile_id
+                )).intersection(POISONS)
+            )
 
         self._allowed_main = set(main_allowed)
         self._allowed_off = set(off_allowed)
         self._allowed_armor = set(armor_allowed)
         self._allowed_materials = set(material_allowed)
         self._helmet_allowed = helmet_allowed
+        self._allowed_equipment = equipment_allowed
+        self._allowed_poisons = poison_allowed
         self.cb_main.config(values=("Ninguna", *(w for w in WEAPONS_GENERAL if w in self._allowed_main)))
         self.cb_main_exclusive.config(values=(
             "Ninguna", *(w for w in WEAPONS_EXCLUSIVE if w in self._allowed_main)
         ))
         self.cb_offhand.config(values=tuple(w for w in OFFHAND_GENERAL if w in self._allowed_off))
         self.cb_off_exclusive.config(values=tuple(w for w in OFFHAND_EXCLUSIVE if w in self._allowed_off))
-        self.cb_armor.config(values=tuple(a for a in ARMORS if a in self._allowed_armor))
+        self.cb_armor.config(values=tuple(a for a in BODY_ARMORS if a in self._allowed_armor))
         self.cb_main_material.config(values=tuple(m for m in WEAPON_MATERIALS if m in self._allowed_materials))
         self.cb_off_material.config(values=tuple(m for m in WEAPON_MATERIALS if m in self._allowed_materials))
+        poison_values = tuple(poison for poison in POISONS if poison in poison_allowed)
+        self.cb_main_poison.config(values=poison_values)
+        self.cb_off_poison.config(values=poison_values)
 
         visible = [skill for skill in self.skills if skill in skill_allowed]
         for widget in self.skill_widgets.values():
@@ -703,10 +777,33 @@ class WarriorConfigFrame(ttk.LabelFrame):
             self.eq_main_material.set("Sin material")
         if self.eq_off_material.get() not in self._allowed_materials:
             self.eq_off_material.set("Sin material")
-        if not helmet_allowed:
-            self.eq_has_helmet.set(False)
-        self.chk_helmet.config(state="normal" if helmet_allowed else "disabled")
+        if self.eq_main_poison.get() not in poison_allowed:
+            self.eq_main_poison.set("Sin veneno")
+        if self.eq_off_poison.get() not in poison_allowed:
+            self.eq_off_poison.set("Sin veneno")
+        for name, variable in self.equipment_vars.items():
+            allowed = name in equipment_allowed
+            if not allowed:
+                variable.set(False)
+            self.equipment_menu.entryconfigure(
+                self._equipment_menu_indices[name],
+                state="normal" if allowed else "disabled",
+            )
+        self._update_equipment_summary()
         self.on_equipment_change()
+
+    def _equipment_selection_changed(self, selected_name):
+        """Actualiza el contador del equipamiento múltiple."""
+        self._update_equipment_summary()
+
+    def _update_equipment_summary(self):
+        selected = [
+            name for name in EQUIPMENT_SELECTOR_OPTIONS
+            if self.equipment_vars[name].get()
+        ]
+        self.equipment_button_text.set(
+            "Ninguno ▾" if not selected else f"{len(selected)} seleccionado(s) ▾"
+        )
 
     def change_stat(
         self,
@@ -854,12 +951,17 @@ class WarriorConfigFrame(ttk.LabelFrame):
             self.cb_offhand.config(state="disabled")
             self.cb_off_exclusive.config(state="disabled")
             self.cb_off_material.config(state="disabled")
+            self.eq_off_poison.set("Sin veneno")
+            self.cb_off_poison.config(state="disabled")
         else:
             self.cb_offhand.config(state="readonly")
             self.cb_off_material.config(state="readonly")
-        if not self._helmet_allowed:
-            self.chk_helmet.config(state="disabled")
-
+            off_weapon = self._selected_offhand()
+            if off_weapon in ("Ninguna", "Escudo", "Rodela"):
+                self.eq_off_poison.set("Sin veneno")
+                self.cb_off_poison.config(state="disabled")
+            else:
+                self.cb_off_poison.config(state="readonly")
     def get_config_dict(self):
 
         result = {}
@@ -882,16 +984,20 @@ class WarriorConfigFrame(ttk.LabelFrame):
         result["off_hand"] = self._selected_offhand()
         result["main_weapon_material"] = self.eq_main_material.get()
         result["offhand_material"] = self.eq_off_material.get()
-        result["weapon_material"] = result["main_weapon_material"]
-        result["preparation"] = "Ninguno"
-        result["main_poison"] = "Sin veneno"
-        result["offhand_poison"] = "Sin veneno"
+        selected_preparations = [
+            name for name in PREPARATIONS
+            if name != "Ninguno" and self.equipment_vars[name].get()
+        ]
+        result["preparations"] = selected_preparations
+        result["main_poison"] = self.eq_main_poison.get()
+        result["offhand_poison"] = self.eq_off_poison.get()
 
         result["has_helmet"] = (
             self.eq_has_helmet.get()
         )
 
-        result["has_luck_amulet"] = False
+        result["has_luck_amulet"] = self.equipment_vars["Amuleto de la suerte"].get()
+        result["has_sea_dragon_cloak"] = self.equipment_vars["Capa de Dragón Marino"].get()
         result["house_rule_offhand_penalty"] = self.house_rule_offhand_penalty.get()
         result["house_rule_dual_penalty"] = self.house_rule_dual_penalty.get()
         result["undead_or_possessed"] = self.undead_or_possessed.get()
@@ -908,19 +1014,11 @@ class WarriorConfigFrame(ttk.LabelFrame):
             entry.insert(0, str(config.get(attribute, self.stats[attribute])))
 
         selected_skills = set(config.get("skills", ()))
-        if "Experto en Esgrima (Cimitarra)" in selected_skills:
-            selected_skills.discard("Experto en Esgrima (Cimitarra)")
-            selected_skills.add("Experto en Esgrima")
         for skill, variable in self.skills.items():
             variable.set(skill in selected_skills)
 
         main_weapon = config.get("main_weapon", WEAPONS_GENERAL[0])
         off_hand = config.get("off_hand", "Ninguna")
-        if main_weapon in MAIN_HAND_FORBIDDEN_WEAPONS:
-            # Compatibilidad con configuraciones antiguas que guardaban el
-            # Guantelete Solar en la mano equivocada.
-            off_hand = main_weapon
-            main_weapon = "Daga"
         self.eq_main_general.set(
             "Ninguna" if main_weapon in WEAPONS_EXCLUSIVE else main_weapon
         )
@@ -935,8 +1033,22 @@ class WarriorConfigFrame(ttk.LabelFrame):
         )
         self.eq_main_material.set(config.get("main_weapon_material", "Normal"))
         self.eq_off_material.set(config.get("offhand_material", "Normal"))
-        self.eq_armor.set(config.get("armor", ARMORS[0]))
+        self.eq_armor.set(config.get("armor", BODY_ARMORS[0]))
+        for variable in self.equipment_vars.values():
+            variable.set(False)
         self.eq_has_helmet.set(config.get("has_helmet", False))
+        self.equipment_vars["Amuleto de la suerte"].set(
+            config.get("has_luck_amulet", False)
+        )
+        self.equipment_vars["Capa de Dragón Marino"].set(
+            config.get("has_sea_dragon_cloak", False)
+        )
+        for preparation in config.get("preparations", ()):
+            if preparation in self.equipment_vars:
+                self.equipment_vars[preparation].set(True)
+        self.eq_main_poison.set(config.get("main_poison", "Sin veneno"))
+        self.eq_off_poison.set(config.get("offhand_poison", "Sin veneno"))
+        self._update_equipment_summary()
         self.house_rule_offhand_penalty.set(
             config.get("house_rule_offhand_penalty", False)
         )
@@ -1120,11 +1232,7 @@ class TrollheimApp(tk.Tk):
             ToolTip(button, tooltip)
 
         self.notebook = ttk.Notebook(self)
-
-        self.notebook.pack(
-            fill="both",
-            expand=True,
-        )
+        self.notebook.pack(fill="both", expand=True)
 
         self.enemy_check_widgets = []
         self.enemy_difficulties = {
@@ -1136,14 +1244,12 @@ class TrollheimApp(tk.Tk):
         self.simulations_combos = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
         self.simulations_equipment = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
         self.simulations_weapons = tk.StringVar(value=str(DEFAULT_COMBO_SIMULATIONS))
-        self.results_view = tk.StringVar(value="optimal")
         self.combo_view = tk.StringVar(value="optimal")
         self.equipment_view = tk.StringVar(value="optimal")
         self.weapon_view = tk.StringVar(value="optimal")
         self.combo_search = tk.StringVar()
         self.improvement_count = tk.IntVar(value=1)
         self.equipment_max_items = tk.IntVar(value=1)
-        self.result_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.combo_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.equipment_visible_modes = {mode for mode, _title in COMBAT_MODES}
         self.weapon_visible_modes = {mode for mode, _title in COMBAT_MODES}
@@ -1182,6 +1288,9 @@ class TrollheimApp(tk.Tk):
         self.candidate_band_id = tk.StringVar(value="")
         self.candidate_profile_id = tk.StringVar(value="")
         self.candidate_catalog_status = tk.StringVar(value="Selección libre: todas las opciones del simulador.")
+        self.house_rule_vars = {
+            key: tk.BooleanVar(value=False) for key in HOUSE_RULES
+        }
         self.candidate_workbook_path = None
         self._candidate_bands = load_bands()
         self._band_by_name = {band.name: band for band in self._candidate_bands}
@@ -1197,6 +1306,7 @@ class TrollheimApp(tk.Tk):
             ("combos", "Mejoras", self.setup_tab_combos),
             ("weapons", "Armas", self.setup_tab_weapons),
             ("equipment", "Equipamiento", self.setup_tab_equipment),
+            ("house_rules", "Reglas de la casa", self.setup_tab_house_rules),
         )
         self._lazy_tabs = {}
         self._built_tabs = set()
@@ -1225,7 +1335,9 @@ class TrollheimApp(tk.Tk):
                 self._built_tabs.add(key)
                 builder(tab)
                 self._install_context_help(tab)
-                self.after_idle(lambda current_tab=tab: self._install_context_help(current_tab))
+                self.after_idle(
+                    lambda current_tab=tab: self._install_context_help(current_tab)
+                )
                 return
 
     def _install_context_help(self, root):
@@ -1261,8 +1373,6 @@ class TrollheimApp(tk.Tk):
                 help_text = f"Selecciona la opción «{text}»."
             elif isinstance(widget, ttk.Progressbar):
                 help_text = "Muestra el progreso de la operación en curso."
-            elif isinstance(widget, ttk.Notebook):
-                help_text = "Selecciona una pestaña para cambiar de sección."
             elif isinstance(widget, (ttk.Label, tk.Label)):
                 if text:
                     help_text = text
@@ -1392,11 +1502,11 @@ class TrollheimApp(tk.Tk):
                 self.after_cancel(pending)
                 self._enemy_materialize_after_id = None
             self._save_active_enemy_editor()
-            self._warrior_snapshots[key] = [dict(profile) for profile in self._enemy_profiles]
+            self._warrior_snapshots[key] = [
+                dict(profile) for profile in self._enemy_profiles
+            ]
 
         tab = self.nametowidget(self._tab_id_for(key))
-        # Marcarla como descargada antes de destruir evita una segunda descarga
-        # si Tk cuela otro evento de cambio mientras procesa los widgets.
         self._built_tabs.discard(key)
         for child in tab.winfo_children():
             child.destroy()
@@ -1406,8 +1516,56 @@ class TrollheimApp(tk.Tk):
 
     def _candidate_for_simulation(self):
         if "candidate" in self._built_tabs:
-            return self._candidate_config_dict()
-        return self._warrior_snapshots["candidate"].copy()
+            config = self._candidate_config_dict()
+        else:
+            config = self._warrior_snapshots["candidate"].copy()
+        return self._apply_house_rules(config)
+
+    def _house_rules_payload(self):
+        return {
+            key: bool(variable.get())
+            for key, variable in self.house_rule_vars.items()
+        }
+
+    def _apply_house_rules(self, config):
+        result = dict(config)
+        selected = self._house_rules_payload()
+        for rule_key, config_key in HOUSE_RULE_CONFIG_KEYS.items():
+            result[config_key] = selected.get(rule_key, False)
+        return result
+
+    def _restore_house_rules(self, values):
+        values = values if isinstance(values, dict) else {}
+        for key, variable in self.house_rule_vars.items():
+            variable.set(bool(values.get(key, False)))
+
+    def setup_tab_house_rules(self, tab):
+        heading = ttk.Frame(tab, padding=(18, 15, 18, 8))
+        heading.pack(fill="x")
+        ttk.Label(
+            heading, text="Reglas de la casa", font=("Arial", 15, "bold")
+        ).pack(anchor="w")
+        ttk.Label(
+            heading,
+            text=(
+                "Marca las reglas que se aplicarán globalmente al candidato, a "
+                "todos los enemigos y a los análisis de coste."
+            ),
+            wraplength=920,
+        ).pack(anchor="w", pady=(4, 0))
+
+        rules_frame = ttk.Frame(tab, padding=(18, 4, 18, 18))
+        rules_frame.pack(fill="both", expand=True)
+        for row, (key, rule) in enumerate(HOUSE_RULES.items()):
+            card = ttk.LabelFrame(rules_frame, text=f" {rule['name']} ")
+            card.grid(row=row, column=0, sticky="ew", pady=4)
+            card.columnconfigure(1, weight=1)
+            check = ttk.Checkbutton(card, variable=self.house_rule_vars[key])
+            check.grid(row=0, column=0, padx=(10, 5), pady=9, sticky="n")
+            label = ttk.Label(card, text=rule["description"], wraplength=920)
+            label.grid(row=0, column=1, padx=(0, 12), pady=9, sticky="w")
+            ToolTip(check, f"Activa o desactiva «{rule['name']}».")
+        rules_frame.columnconfigure(0, weight=1)
 
     def _custom_enemies_for_simulation(self):
         if "enemy" in self._built_tabs:
@@ -1567,6 +1725,7 @@ class TrollheimApp(tk.Tk):
         enemy_profiles = self._custom_enemies_for_simulation()
         return {
             "config": self._candidate_for_simulation(), "candidate": self._candidate_metadata(),
+            "house_rules": self._house_rules_payload(),
             "opponent": opponent,
             "enemies": {
                 "mode": self.enemy_mode.get(), "level": self.enemy_level.get(),
@@ -1585,11 +1744,7 @@ class TrollheimApp(tk.Tk):
         for target, title, count_var in specs:
             table_data = getattr(self, f"_{target.rstrip('s')}_table_data", None)
             card_data = getattr(self, f"_{target.rstrip('s')}_card_data", None)
-            # Los dos nombres irregulares son históricos y se mantienen en la UI.
-            if target == "results":
-                table_data = getattr(self, "_results_table_data", None)
-                card_data = getattr(self, "_results_card_data", None)
-            elif target == "equipment":
+            if target == "equipment":
                 table_data = getattr(self, "_equipment_table_data", None)
                 card_data = getattr(self, "_equipment_card_data", None)
             if not table_data:
@@ -1603,14 +1758,14 @@ class TrollheimApp(tk.Tk):
                 target, table_data, selection_count=selection_count
             )
             results.append({
-                "format_version": 2,
+                "format_version": FORMAT_VERSION,
                 "target": target, "title": title,
                 "selection_count": selection_count,
                 "iterations": int(count_var.get()),
                 "generated_at": getattr(self, f"_{target}_generated_at", datetime.now().isoformat(timespec="seconds")),
                 "opponent": self._opponent_description(),
-                "view": {"results": self.results_view, "combos": self.combo_view,
-                         "weapons": self.weapon_view, "equipment": self.equipment_view}[target].get(),
+                "view": {"combos": self.combo_view, "weapons": self.weapon_view,
+                         "equipment": self.equipment_view}[target].get(),
                 "headers": headers, "rows": rows,
                 "table_data": table_data, "card_data": card_data,
             })
@@ -1628,7 +1783,6 @@ class TrollheimApp(tk.Tk):
         data, equipment, *extra = table_data
         loadout_costs = extra[0] if target in {"weapons", "equipment"} and extra else {}
         label_headers = {
-            "results": ("Mejora",),
             "combos": tuple(
                 f"Mejora {index}" for index in range(1, (selection_count or 2) + 1)
             ),
@@ -1647,18 +1801,14 @@ class TrollheimApp(tk.Tk):
         rows_by_label = {}
         base_rates = {}
         for mode, mode_data in data.items():
-            if target == "results":
-                base, values = mode_data
-                base_rates[mode] = base[1]
-            else:
-                base_rates[mode], values = mode_data
+            base_rates[mode], values = mode_data
             for label, rate, impact in values:
                 rows_by_label.setdefault(label, {})[mode] = (rate, impact)
         rows_by_label = {"ESTADO BASE": {mode: (rate, 0.0) for mode, rate in base_rates.items()}, **rows_by_label}
         rows = []
         for label, values in rows_by_label.items():
             parts = {
-                "results": (label,), "combos": tuple(label.split(" + ")),
+                "combos": tuple(label.split(" + ")),
                 "weapons": tuple(label.split(" || ", 1)),
                 "equipment": tuple(part for part in label.split(" || ") if part),
             }[target]
@@ -1726,6 +1876,7 @@ class TrollheimApp(tk.Tk):
             return
         try:
             payload = load_candidate_workbook(path)
+            self._restore_house_rules(payload.get("house_rules"))
             self._restore_candidate_state(payload["config"])
             enemies = payload.get("enemies") or {}
             self.enemy_mode.set(enemies.get("mode", self.enemy_mode.get()))
@@ -1777,6 +1928,21 @@ class TrollheimApp(tk.Tk):
         if "candidate" in self._built_tabs:
             self._restore_candidate_payload(config)
 
+    def _costs_with_house_rules(self, costs):
+        adjusted = dict(costs)
+        if self.house_rule_vars["cheap_armour"].get():
+            armour_items = {
+                *(armor for armor in BODY_ARMORS if armor != "Sin Armadura"),
+                "Casco", "Escudo", "Rodela",
+            }
+            for item in armour_items:
+                if item in adjusted:
+                    adjusted[item] = float(math.ceil(adjusted[item] / 2.0))
+        if self.house_rule_vars["expensive_junk"].get():
+            for item in ("Maza", "Honda"):
+                adjusted[item] = 5.0
+        return adjusted
+
     def _restore_enemies_state(self, enemies, force_custom=False):
         profiles = [dict(profile) for profile in (enemies.get("profiles") or ())]
         if not profiles:
@@ -1796,11 +1962,7 @@ class TrollheimApp(tk.Tk):
 
     def _restore_results_state(self, results):
         for result in results:
-            if result.get("format_version") != 2:
-                continue
             target = result.get("target")
-            if target not in {"combos", "weapons", "equipment"}:
-                continue
             setattr(self, f"_{target}_generated_at", result.get("generated_at"))
             table_name = {"combos": "_combo_table_data",
                           "weapons": "_weapon_table_data", "equipment": "_equipment_table_data"}[target]
@@ -2242,9 +2404,7 @@ class TrollheimApp(tk.Tk):
         return cards
 
     def _toggle_mode_column(self, target, mode):
-        if target == "results":
-            visible, cards = self.result_visible_modes, self.result_cards
-        elif target == "combos":
+        if target == "combos":
             visible, cards = self.combo_visible_modes, self.combo_cards
         elif target == "equipment":
             visible, cards = self.equipment_visible_modes, self.equipment_cards
@@ -2260,7 +2420,6 @@ class TrollheimApp(tk.Tk):
 
         self._apply_result_view(target)
         renderers = {
-            "results": self._render_results_table,
             "combos": self._render_combo_table,
             "equipment": self._render_equipment_table,
             "weapons": self._render_weapon_table,
@@ -2291,10 +2450,7 @@ class TrollheimApp(tk.Tk):
         TrollheimApp._refresh_mode_card_visibility(cards, visible)
 
     def _apply_result_view(self, target):
-        if target == "results":
-            tree, view_var = self.results_tree, self.results_view
-            visible, fixed = self.result_visible_modes, ("Mejora",)
-        elif target == "combos":
+        if target == "combos":
             tree, view_var = self.combo_tree, self.combo_view
             visible = self.combo_visible_modes
             fixed = tuple(
@@ -2335,7 +2491,6 @@ class TrollheimApp(tk.Tk):
     def _change_result_view(self, target):
         self._apply_result_view(target)
         renderers = {
-            "results": self._render_results_table,
             "combos": self._render_combo_table,
             "equipment": self._render_equipment_table,
             "weapons": self._render_weapon_table,
@@ -2343,10 +2498,7 @@ class TrollheimApp(tk.Tk):
         renderers[target]()
 
     def _restore_simulation_tab(self, target):
-        if target == "results":
-            table_name, cards_name = "_results_table_data", "_results_card_data"
-            cards, renderer = self.result_cards, self._render_results_table
-        elif target == "combos":
+        if target == "combos":
             table_name, cards_name = "_combo_table_data", "_combo_card_data"
             cards, renderer = self.combo_cards, self._render_combo_table
         elif target == "equipment":
@@ -2402,9 +2554,7 @@ class TrollheimApp(tk.Tk):
 
     def _update_mode_cards(self, cards, base_rates, user_mode_key, equipment):
         user_rate = base_rates[user_mode_key]
-        if cards is getattr(self, "result_cards", None):
-            visible = self.result_visible_modes
-        elif cards is getattr(self, "combo_cards", None):
+        if cards is getattr(self, "combo_cards", None):
             visible = self.combo_visible_modes
         elif cards is getattr(self, "equipment_cards", None):
             visible = self.equipment_visible_modes
@@ -2426,63 +2576,6 @@ class TrollheimApp(tk.Tk):
                 foreground=color,
             )
         self._refresh_mode_card_visibility(cards, visible)
-
-    def setup_tab_results(self, tab):
-
-        controls = ttk.Frame(tab)
-        controls.pack(pady=7)
-        ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        ttk.Entry(controls, textvariable=self.simulations_improvements, width=12).pack(side="left", padx=(0, 10))
-        self.btn_run = ttk.Button(
-            controls,
-            text="Calcular Comparativa de Mejoras",
-            command=self.start_simulation_thread,
-        )
-        self.btn_run.pack(side="left")
-
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(tab, variable=self.progress_var, maximum=100)
-        self.progress_bar.pack(fill="x", padx=20, pady=5)
-
-        self.status_label = ttk.Label(tab, text="Estado: Listo", font=("Arial", 9, "italic"))
-        self.status_label.pack(pady=2)
-
-        view_controls = ttk.Frame(tab)
-        view_controls.pack(pady=(3, 0))
-        ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
-        ttk.Radiobutton(
-            view_controls, text="Por equipo", variable=self.results_view,
-            value="equipment", command=lambda: self._change_result_view("results"),
-        ).pack(side="left", padx=3)
-        ttk.Radiobutton(
-            view_controls, text="Óptima", variable=self.results_view,
-            value="optimal", command=lambda: self._change_result_view("results"),
-        ).pack(side="left", padx=3)
-
-        self.result_cards = self._create_mode_cards(tab, "results")
-        results_table = ttk.Frame(tab)
-        self.results_tree = ttk.Treeview(
-            results_table,
-            columns=("Mejora", "Single", "Shield", "Dual", "TwoHand", "Optimal", "Equipment"),
-            show="headings",
-        )
-        self._configure_sortable_tree(self.results_tree, [
-            ("Mejora", "Mejora evaluada"),
-            ("Single", "Mano libre"),
-            ("Shield", "Escudo"),
-            ("Dual", "Dos armas"),
-            ("TwoHand", "Dos manos"),
-            ("Optimal", "Mejor resultado"),
-            ("Equipment", "Equipo utilizado"),
-        ])
-        self.results_tree.column("Mejora", width=180)
-        for mode, _title in COMBAT_MODES:
-            self.results_tree.column(mode, width=165, anchor="center")
-        self.results_tree.column("Optimal", width=180, anchor="center")
-        self.results_tree.column("Equipment", width=240, anchor="center")
-        self.results_tree.configure(displaycolumns=("Mejora", "Single", "Shield", "Dual", "TwoHand"))
-        self._pack_scrollable_tree(self.results_tree)
-        self._restore_simulation_tab("results")
 
     def setup_tab_equipment(self, tab):
 
@@ -2544,8 +2637,11 @@ class TrollheimApp(tk.Tk):
         filter_bar = self._create_compare_panel(tab)
         ttk.Label(filter_bar, text="Filtros:", font=("Arial", 9, "bold")).pack(side="left", padx=(8, 6))
         option_groups = (
-            ("Armaduras", tuple(a for a in ARMORS if a != "Sin Armadura")),
-            ("Protecciones", ("Casco", "Amuleto de la suerte")),
+            ("Armaduras", tuple(a for a in BODY_ARMORS if a != "Sin Armadura")),
+            (
+                "Equipamiento",
+                ("Casco", "Amuleto de la suerte", "Capa de Dragón Marino"),
+            ),
             ("Preparaciones", tuple(p for p in PREPARATIONS if p != "Ninguno")),
             ("Venenos", tuple(p for p in POISONS if p != "Sin veneno")),
         )
@@ -2805,7 +2901,7 @@ class TrollheimApp(tk.Tk):
                 return "break"
             button.config(background=pressed_color, relief="sunken")
             button.update_idletasks()
-            command()
+            button._action()
             return "break"
 
         def release(_event=None):
@@ -2819,6 +2915,9 @@ class TrollheimApp(tk.Tk):
         button.bind("<ButtonRelease-1>", release, add="+")
         button.bind("<Return>", press, add="+")
         button.bind("<space>", press, add="+")
+        button._action = command
+        button._default_action = command
+        button._default_text = "SIMULAR"
         button.pack(side="left")
         return button
 
@@ -3158,9 +3257,11 @@ class TrollheimApp(tk.Tk):
     def _equipment_options():
         options = []
         supported = set(equipment_options_for_profile())
-        for armor in ARMORS:
+        for armor in BODY_ARMORS:
             if armor in supported:
                 options.append((armor, "armor", armor))
+        if "Capa de Dragón Marino" in supported:
+            options.append(("Capa de Dragón Marino", "cloak", True))
         if "Casco" in supported:
             options.append(("Casco", "helmet", True))
         if "Amuleto de la suerte" in supported:
@@ -3175,13 +3276,6 @@ class TrollheimApp(tk.Tk):
         )
         return options
 
-    def _set_equipment_filters(self, selected):
-        self._set_named_filters(
-            self.equipment_item_vars,
-            getattr(self, "_equipment_filter_allowed", self.equipment_item_vars),
-            selected,
-        )
-
     def _selected_equipment_options(self):
         selected = self.equipment_item_vars
         return [
@@ -3194,7 +3288,7 @@ class TrollheimApp(tk.Tk):
 
     @staticmethod
     def _equipment_combination_is_legal(items):
-        exclusive_slots = {"armor", "preparation"}
+        exclusive_slots = {"armor"}
         kinds = [item[1] for item in items]
         if any(kinds.count(kind) > 1 for kind in exclusive_slots):
             return False
@@ -3210,13 +3304,6 @@ class TrollheimApp(tk.Tk):
             if TrollheimApp._equipment_combination_is_legal(items):
                 loadouts.append((tuple(item[0] for item in items), items))
         return loadouts
-
-    def _set_weapon_filters(self, selected):
-        self._set_named_filters(
-            self.weapon_item_vars,
-            getattr(self, "_weapon_filter_allowed", self.weapon_item_vars),
-            selected,
-        )
 
     @staticmethod
     def _set_named_filters(variables, values, selected):
@@ -3312,6 +3399,48 @@ class TrollheimApp(tk.Tk):
         )
 
     @staticmethod
+    def _canonical_weapon_candidate(candidate, mode):
+        """Unifica inversiones de mano que producen el mismo ataque dual.
+
+        Con un único ataque base, dos armas simples generan un ataque con cada
+        una. Ordenarlas evita simular dos veces el mismo perfil con dados
+        distintos. Se intercambia el paquete completo de cada mano para
+        conservar materiales y venenos.
+        """
+        result = candidate.copy()
+        if mode != "Dual" or effective_fighter_key(result)[5] != 1:
+            return result
+        main = result.get("main_weapon", "Ninguna")
+        off = result.get("off_hand", "Ninguna")
+        interchangeable = {"Espada", "Daga", "Maza", "Hacha"}
+        if main not in interchangeable or off not in interchangeable:
+            return result
+        if "Maestro del Hacha" in result.get("skills", ()):
+            return result
+
+        main_bundle = (
+            main,
+            result.get("main_weapon_material", "Sin material"),
+            result.get("main_poison", "Sin veneno"),
+        )
+        off_bundle = (
+            off,
+            result.get("offhand_material", "Sin material"),
+            result.get("offhand_poison", "Sin veneno"),
+        )
+        if tuple(str(value).casefold() for value in off_bundle) >= tuple(
+            str(value).casefold() for value in main_bundle
+        ):
+            return result
+        result["main_weapon"], result["main_weapon_material"], result["main_poison"] = (
+            off_bundle
+        )
+        result["off_hand"], result["offhand_material"], result["offhand_poison"] = (
+            main_bundle
+        )
+        return result
+
+    @staticmethod
     def _weapon_cost(weapon, material, costs):
         if weapon == "Ninguna":
             return 0.0
@@ -3390,22 +3519,16 @@ class TrollheimApp(tk.Tk):
         return tuple(result)
 
     @staticmethod
-    def _without_optional_equipment(candidate):
-        result = candidate.copy()
-        result.update({
-            "armor": "Sin Armadura",
-            "has_helmet": False,
-            "has_luck_amulet": False,
-            "preparation": "Ninguno",
-            "main_poison": "Sin veneno",
-            "offhand_poison": "Sin veneno",
-        })
-        return result
-
-    @staticmethod
     def _apply_equipment_items(candidate, items):
-        result = TrollheimApp._without_optional_equipment(candidate)
-        poison_slot = 0
+        """Añade los objetos seleccionados al equipo actual del candidato."""
+        result = candidate.copy()
+        preparations = list(result.get("preparations") or ())
+        preparations_changed = False
+        poison_slots = [
+            result.get("main_poison", "Sin veneno"),
+            result.get("offhand_poison", "Sin veneno"),
+        ]
+        claimed_poison_slots = [False, False]
         for _label, kind, value in items:
             if kind == "armor":
                 result["armor"] = value
@@ -3413,12 +3536,33 @@ class TrollheimApp(tk.Tk):
                 result["has_helmet"] = True
             elif kind == "amulet":
                 result["has_luck_amulet"] = True
+            elif kind == "cloak":
+                result["has_sea_dragon_cloak"] = True
             elif kind == "preparation":
-                result["preparation"] = value
+                if value not in preparations:
+                    preparations.append(value)
+                    preparations_changed = True
             elif kind == "poison":
-                key = "main_poison" if poison_slot == 0 else "offhand_poison"
-                result[key] = value
-                poison_slot += 1
+                matching = next((
+                    index for index, poison in enumerate(poison_slots)
+                    if poison == value and not claimed_poison_slots[index]
+                ), None)
+                if matching is None:
+                    matching = next((
+                        index for index, poison in enumerate(poison_slots)
+                        if poison == "Sin veneno"
+                        and not claimed_poison_slots[index]
+                    ), None)
+                if matching is None:
+                    matching = next((
+                        index for index, claimed in enumerate(claimed_poison_slots)
+                        if not claimed
+                    ), 1)
+                poison_slots[matching] = value
+                claimed_poison_slots[matching] = True
+        result["main_poison"], result["offhand_poison"] = poison_slots
+        if preparations_changed or "preparations" in result:
+            result["preparations"] = preparations
         return result
 
     @staticmethod
@@ -3431,9 +3575,9 @@ class TrollheimApp(tk.Tk):
             owned.append("Casco")
         if candidate.get("has_luck_amulet", False):
             owned.append("Amuleto de la suerte")
-        preparation = candidate.get("preparation", "Ninguno")
-        if preparation != "Ninguno":
-            owned.append(preparation)
+        if candidate.get("has_sea_dragon_cloak", False):
+            owned.append("Capa de Dragón Marino")
+        owned.extend(candidate.get("preparations", ()))
         for poison in (
             candidate.get("main_poison", "Sin veneno"),
             candidate.get("offhand_poison", "Sin veneno"),
@@ -3480,7 +3624,7 @@ class TrollheimApp(tk.Tk):
 
     def _disable_simulation_buttons(self):
         for name in (
-            "btn_run", "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
+            "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
         ):
             button = getattr(self, name, None)
             if button is not None:
@@ -3490,14 +3634,50 @@ class TrollheimApp(tk.Tk):
                     # La pestaña dueña del botón puede estar descargada.
                     pass
 
+    def _activate_cancel_button(self, button):
+        self._simulation_cancel_event = threading.Event()
+        button.config(state="normal", text="CANCELAR")
+        if isinstance(button, tk.Button):
+            button._action = self.cancel_simulation
+            button.config(
+                background="#d9534f", foreground="#ffffff",
+                activebackground="#c9302c", activeforeground="#ffffff",
+                relief="raised",
+            )
+        else:
+            button.config(command=self.cancel_simulation)
+
+    def cancel_simulation(self):
+        if not getattr(self, "_simulation_running", False):
+            return
+        cancel_event = getattr(self, "_simulation_cancel_event", None)
+        if cancel_event is not None:
+            cancel_event.set()
+        button = getattr(self, "_active_button", None)
+        if button is not None:
+            try:
+                button.config(text="CANCELANDO...", state="disabled")
+            except tk.TclError:
+                pass
+        label = getattr(self, "_active_status_label", None)
+        if label is not None:
+            label.config(text="Cancelando la simulación en curso...")
+
     @staticmethod
-    def _run_tasks(tasks, progress_queue, total_simulations, completion_weights=None):
+    def _run_tasks(
+        tasks, progress_queue, total_simulations, completion_weights=None,
+        cancel_event=None,
+    ):
         """Reparte comparaciones completas sin partir ningún combate."""
         completion_weights = completion_weights or {}
-        process_tasks = [
-            (*task[:10], None, task[11], *task[12:])
-            for task in tasks
-        ]
+
+        def worker_task(task, worker_cancel_event):
+            return (
+                *task[:10], None, task[11], *task[12:], worker_cancel_event,
+            )
+
+        def cancelled():
+            return cancel_event is not None and cancel_event.is_set()
 
         def report(result):
             if progress_queue is not None:
@@ -3506,8 +3686,10 @@ class TrollheimApp(tk.Tk):
 
         if len(tasks) < 4 or len(tasks) * total_simulations < 100_000:
             results = []
-            for task in process_tasks:
-                result = run_single_task_optimized(task)
+            for task in tasks:
+                if cancelled():
+                    raise SimulationCancelled("Simulación cancelada por el usuario.")
+                result = run_single_task_optimized(worker_task(task, cancel_event))
                 results.append(result)
                 report(result)
             return results
@@ -3516,25 +3698,41 @@ class TrollheimApp(tk.Tk):
         # La interfaz también quiere respirar mientras los dados hacen horas extra.
         worker_limit = max(1, available_cpus - 1)
         worker_count = min(8, worker_limit, len(tasks))
-        groups = [
-            process_tasks[index:index + TASK_GROUP_SIZE]
-            for index in range(0, len(process_tasks), TASK_GROUP_SIZE)
-        ]
         results = []
 
-        with ProcessPoolExecutor(
-            max_workers=worker_count,
-            initializer=_configure_simulation_worker,
-        ) as executor:
-            futures = {
-                executor.submit(run_task_batch, group): len(group)
-                for group in groups if group
-            }
-            for future in as_completed(futures):
-                batch = future.result()
-                results.extend(batch)
-                for result in batch:
-                    report(result)
+        with multiprocessing.Manager() as manager:
+            worker_cancel_event = manager.Event()
+            process_tasks = [
+                worker_task(task, worker_cancel_event) for task in tasks
+            ]
+            groups = [
+                process_tasks[index:index + TASK_GROUP_SIZE]
+                for index in range(0, len(process_tasks), TASK_GROUP_SIZE)
+            ]
+            with ProcessPoolExecutor(
+                max_workers=worker_count,
+                initializer=_configure_simulation_worker,
+            ) as executor:
+                pending = {
+                    executor.submit(run_task_batch, group)
+                    for group in groups if group
+                }
+                while pending:
+                    if cancelled():
+                        worker_cancel_event.set()
+                        for future in pending:
+                            future.cancel()
+                        raise SimulationCancelled(
+                            "Simulación cancelada por el usuario."
+                        )
+                    done, pending = wait(
+                        pending, timeout=0.1, return_when=FIRST_COMPLETED
+                    )
+                    for future in done:
+                        batch = future.result()
+                        results.extend(batch)
+                        for result in batch:
+                            report(result)
         return results
 
     @staticmethod
@@ -3559,315 +3757,37 @@ class TrollheimApp(tk.Tk):
 
     def _enable_simulation_buttons(self):
         for name in (
-            "btn_run", "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
+            "btn_equipment_run", "btn_weapons_run", "btn_combo_run",
         ):
             button = getattr(self, name, None)
             if button is not None:
                 try:
-                    button.config(state="normal")
+                    default_text = getattr(button, "_default_text", "SIMULAR")
+                    default_action = getattr(button, "_default_action", None)
+                    button.config(state="normal", text=default_text)
                     if isinstance(button, tk.Button):
-                        button.config(background="#e6e6e6", relief="raised")
+                        if default_action is not None:
+                            button._action = default_action
+                        button.config(
+                            background="#e6e6e6", foreground="#000000",
+                            activebackground="#8fc5f7", activeforeground="#000000",
+                            relief="raised",
+                        )
+                    elif default_action is not None:
+                        button.config(command=default_action)
                 except tk.TclError:
                     # Igual que arriba: no hay botón que reactivar si la pestaña no existe.
                     pass
 
-    def start_simulation_thread(self):
-
-        try:
-
-            base_candidate = self._candidate_for_simulation()
-            total_simulations = self._read_simulation_count(
-                self.simulations_improvements
-            )
-
-        except ValueError:
-
-            messagebox.showerror(
-                "Error",
-                "Introduce valores numéricos válidos.",
-            )
-
-            return
-
-        if self.enemy_mode.get() == "sample":
-
-            active_enemies = self._active_enemy_names()
-
-            if not active_enemies:
-
-                messagebox.showerror(
-                    "Error de Muestra",
-                    "Debes seleccionar al menos un enemigo.",
-                )
-
-                return
-
-        self._disable_simulation_buttons()
-        self._active_progress_var = self.progress_var
-        self._active_status_label = self.status_label
-        self._active_progress_bar = self.progress_bar
-        self._active_button = self.btn_run
-        self._progress_target = 0.0
-        self._simulation_started_at = time.perf_counter()
-        self._progress_indeterminate = True
+    def _simulation_cancelled(self):
+        self._enable_simulation_buttons()
         self._cancel_progress_poll()
-
-        self.progress_var.set(0)
-        self.progress_bar.config(mode="indeterminate")
-        self.progress_bar.start(PROGRESS_ANIMATION_MS)
-
-        self.status_label.config(
-            text=(
-                "Preparando simulación..."
-            )
-        )
-
-        for row in self.results_tree.get_children():
-            self.results_tree.delete(row)
-        self._reset_mode_cards(self.result_cards, self.result_visible_modes)
-
-        enemy_mode = (
-            self.enemy_mode.get()
-        )
-
-        self._simulation_running = True
-
-        thread = threading.Thread(
-            target=self.run_simulations_threadpool,
-            args=(
-                base_candidate,
-                enemy_mode,
-                total_simulations,
-            ),
-            daemon=True,
-        )
-
-        thread.start()
-
-    def run_simulations_threadpool(
-        self,
-        base_candidate,
-        enemy_mode,
-        total_simulations,
-    ):
-
-        try:
-            custom_enemy = None
-            active_pool_names = []
-
-            if enemy_mode == "custom":
-
-                custom_enemy = self._custom_enemies_for_simulation()
-
-            else:
-
-                active_pool_names = self._active_enemy_names()
-
-            upgrades = [
-                ("ESTADO BASE", None),
-                *self._build_upgrade_list(base_candidate),
-            ]
-
-            modes = [
-                "Single",
-                "Shield",
-                "Dual",
-                "TwoHand",
-            ]
-
-            master_seed = random.randint(
-                1,
-                2_147_483_647,
-            )
-
-            # Misma muestra para todos: comparar dados distintos sería hacer trampas.
-            if enemy_mode == "sample":
-
-                self.after(
-                    0,
-                    self._set_status,
-                    "Generando muestra compartida de enemigos...",
-                )
-
-                shared_enemy_indices = (
-                    _generate_shared_enemy_selection(
-                        active_pool_names,
-                        total_simulations,
-                        master_seed,
-                        ENEMY_VARIANTS_PER_PROFILE,
-                    )
-                )
-
-            else:
-
-                shared_enemy_indices = self._manual_enemy_indices(
-                    custom_enemy, total_simulations, master_seed
-                )
-
-            progress_queue = queue.Queue()
-            self._progress_queue = progress_queue
-            self._progress_chunks_done = 0
-            self._progress_chunk_total = 0
-
-            tasks = []
-
-            for mode in modes:
-
-                for idx, (
-                    label,
-                    upgrade,
-                ) in enumerate(
-                    upgrades
-                ):
-
-                    candidate_test = self._apply_upgrade(
-                        base_candidate,
-                        upgrade,
-                    )
-
-                    candidate_test = (
-                        self.build_setup(
-                            candidate_test,
-                            mode,
-                        )
-                    )
-
-                    is_base = (
-                        idx == 0
-                    )
-
-                    tasks.append(
-                        (
-                            mode,
-                            label,
-                            candidate_test,
-                            enemy_mode,
-                            custom_enemy,
-                            active_pool_names,
-                            shared_enemy_indices,
-                            total_simulations,
-                            master_seed
-                            + idx
-                            + (
-                                modes.index(mode)
-                                * 1000
-                            ),
-                            is_base,
-                            progress_queue,
-                            len(tasks),
-                            self.enemy_level.get(),
-                        )
-                    )
-
-            total_tasks = len(tasks)
-
-            unique_tasks, aliases = self._deduplicate_tasks(tasks)
-            completion_weights = {
-                canonical: len(group) for canonical, group in aliases.items()
-            }
-
-            raw_results = {
-                mode: []
-                for mode in modes
-            }
-
-            self.after(
-                0,
-                self._set_status,
-                f"Ejecutando {total_tasks} combinaciones vectorizadas...",
-            )
-
-            self._progress_chunk_total = (
-                total_tasks * total_simulations
-            )
-
-            self._progress_poll_id = self.after(
-                PROGRESS_POLL_MS, self._poll_simulation_progress
-            )
-
-            for mode, label, win_rate, _is_base in self._run_tasks(
-                unique_tasks,
-                progress_queue,
-                total_simulations,
-                completion_weights,
-            ):
-                for alias_label, alias_is_base in aliases[(mode, label)]:
-                    raw_results[mode].append(
-                        (alias_label, win_rate, alias_is_base)
-                    )
-
-
-            mode_results = {}
-
-            for mode, data in (
-                raw_results.items()
-            ):
-
-                base_rate = next(
-                    rate
-                    for label, rate, is_base
-                    in data
-                    if is_base
-                )
-
-                base_tuple = (
-                    "ESTADO BASE",
-                    base_rate,
-                    0.0,
-                )
-
-                others = []
-
-                for (
-                    label,
-                    rate,
-                    is_base,
-                ) in data:
-
-                    if not is_base:
-
-                        others.append(
-                            (
-                                label,
-                                rate,
-                                rate - base_rate,
-                            )
-                        )
-
-                mode_results[
-                    mode
-                ] = (
-                    base_tuple,
-                    others,
-                )
-
-            user_mode_key = (
-                self.get_user_mode_key(
-                    base_candidate
-                )
-            )
-
-            self._simulation_running = False
-
-            self.after(
-                0,
-                self.update_ui_with_results,
-                mode_results,
-                user_mode_key,
-                {
-                    mode: self._equipment_description(self.build_setup(base_candidate, mode))
-                    for mode, _title in COMBAT_MODES
-                },
-            )
-
-        except Exception as exc:
-
-            self._simulation_running = False
-
-            self.after(
-                0,
-                self._simulation_error,
-                exc,
+        self._switch_progress_to_determinate()
+        label = getattr(self, "_active_status_label", None)
+        if label is not None:
+            elapsed = time.perf_counter() - self._simulation_started_at
+            label.config(
+                text=f"Simulación cancelada · {self._format_elapsed(elapsed)}"
             )
 
     def start_equipment_thread(self):
@@ -3880,8 +3800,10 @@ class TrollheimApp(tk.Tk):
             if not selected_options:
                 raise ValueError("Selecciona al menos un objeto para comparar.")
             maximum_items = int(self.equipment_max_items.get())
-            equipment_costs = equipment_costs_for_profile(
-                self.candidate_band_id.get(), self.candidate_profile_id.get()
+            equipment_costs = self._costs_with_house_rules(
+                equipment_costs_for_profile(
+                    self.candidate_band_id.get(), self.candidate_profile_id.get()
+                )
             )
         except ValueError as exc:
             messagebox.showerror("Error", str(exc))
@@ -3898,6 +3820,7 @@ class TrollheimApp(tk.Tk):
         self._active_status_label = self.equipment_status_label
         self._active_progress_bar = self.equipment_progress_bar
         self._active_button = self.btn_equipment_run
+        self._activate_cancel_button(self.btn_equipment_run)
         self._progress_target = 0.0
         self._simulation_started_at = time.perf_counter()
         self._progress_indeterminate = True
@@ -3959,7 +3882,7 @@ class TrollheimApp(tk.Tk):
                 active_pool_names, shared_enemy_indices, total_simulations,
                 master_seed, True, progress_queue, 0, self.enemy_level.get(),
             )]
-            for loadout_index, (labels, items) in enumerate(loadouts, 1):
+            for labels, items in loadouts:
                 candidate_test = self._apply_equipment_items(base_candidate, items)
                 padded_labels = (*labels, *("",) * (5 - len(labels)))
                 label = " || ".join(padded_labels)
@@ -3970,7 +3893,7 @@ class TrollheimApp(tk.Tk):
                 tasks.append((
                     mode, label, candidate_test, enemy_mode, custom_enemy,
                     active_pool_names, shared_enemy_indices, total_simulations,
-                    master_seed + loadout_index, False, progress_queue,
+                    master_seed, False, progress_queue,
                     len(tasks), self.enemy_level.get(),
                 ))
 
@@ -3991,7 +3914,8 @@ class TrollheimApp(tk.Tk):
 
             raw_results = {mode: []}
             for mode, label, win_rate, _is_base in self._run_tasks(
-                unique_tasks, progress_queue, total_simulations, completion_weights
+                unique_tasks, progress_queue, total_simulations, completion_weights,
+                self._simulation_cancel_event,
             ):
                 for alias_label, alias_is_base in aliases[(mode, label)]:
                     raw_results[mode].append(
@@ -4018,6 +3942,10 @@ class TrollheimApp(tk.Tk):
                 },
                 loadout_costs,
             )
+        except SimulationCancelled:
+            self._simulation_running = False
+            self.after(0, self._simulation_cancelled)
+
         except Exception as exc:
             self._simulation_running = False
             self.after(0, self._simulation_error, exc)
@@ -4117,8 +4045,10 @@ class TrollheimApp(tk.Tk):
             if not materials:
                 raise ValueError("Selecciona al menos un material para comparar.")
             defenses = self._selected_weapon_defenses()
-            weapon_costs = equipment_costs_for_profile(
-                self.candidate_band_id.get(), self.candidate_profile_id.get()
+            weapon_costs = self._costs_with_house_rules(
+                equipment_costs_for_profile(
+                    self.candidate_band_id.get(), self.candidate_profile_id.get()
+                )
             )
         except ValueError as exc:
             messagebox.showerror("Error", str(exc))
@@ -4135,6 +4065,7 @@ class TrollheimApp(tk.Tk):
         self._active_status_label = self.weapon_status_label
         self._active_progress_bar = self.weapon_progress_bar
         self._active_button = self.btn_weapons_run
+        self._activate_cancel_button(self.btn_weapons_run)
         self._simulation_started_at = time.perf_counter()
         self._progress_indeterminate = True
         self._cancel_progress_poll()
@@ -4196,22 +4127,22 @@ class TrollheimApp(tk.Tk):
             # su propia referencia (p. ej. Dual ya añadía una daga), ocultando la
             # mejora real de las filas que coincidían con esa referencia ficticia.
             for mode in modes:
-                current = base_candidate.copy()
+                current = self._canonical_weapon_candidate(base_candidate, mode)
                 tasks.append((
                     mode, "ESTADO BASE", current, enemy_mode, custom_enemy,
                     active_pool_names, shared_enemy_indices, total_simulations,
-                    master_seed, True, progress_queue,
+                    master_seed + modes.index(mode) * 100_000,
+                    True, progress_queue,
                     len(tasks), self.enemy_level.get(),
                 ))
 
-            for index, (
-                mode, main, off, main_material, off_material
-            ) in enumerate(loadouts, 1):
+            for mode, main, off, main_material, off_material in loadouts:
                 candidate = base_candidate.copy()
                 candidate["main_weapon"] = main
                 candidate["off_hand"] = off
                 candidate["main_weapon_material"] = main_material
                 candidate["offhand_material"] = off_material
+                candidate = self._canonical_weapon_candidate(candidate, mode)
                 label = self._weapon_loadout_label(
                     main, off, main_material, off_material
                 )
@@ -4223,7 +4154,7 @@ class TrollheimApp(tk.Tk):
                 tasks.append((
                     mode, label, candidate, enemy_mode, custom_enemy,
                     active_pool_names, shared_enemy_indices, total_simulations,
-                    master_seed + modes.index(mode) * 100_000 + index,
+                    master_seed + modes.index(mode) * 100_000,
                     False, progress_queue, len(tasks), self.enemy_level.get(),
                 ))
 
@@ -4244,7 +4175,8 @@ class TrollheimApp(tk.Tk):
 
             raw_results = {mode: [] for mode in modes}
             for mode, label, win_rate, _is_base in self._run_tasks(
-                unique_tasks, progress_queue, total_simulations, completion_weights
+                unique_tasks, progress_queue, total_simulations, completion_weights,
+                self._simulation_cancel_event,
             ):
                 for alias_label, alias_is_base in aliases[(mode, label)]:
                     raw_results[mode].append((alias_label, win_rate, alias_is_base))
@@ -4270,6 +4202,10 @@ class TrollheimApp(tk.Tk):
                 },
                 loadout_costs,
             )
+        except SimulationCancelled:
+            self._simulation_running = False
+            self.after(0, self._simulation_cancelled)
+
         except Exception as exc:
             self._simulation_running = False
             self.after(0, self._simulation_error, exc)
@@ -4398,6 +4334,7 @@ class TrollheimApp(tk.Tk):
         self._active_status_label = self.combo_status_label
         self._active_progress_bar = self.combo_progress_bar
         self._active_button = self.btn_combo_run
+        self._activate_cancel_button(self.btn_combo_run)
         self._progress_target = 0.0
         self._simulation_started_at = time.perf_counter()
         self._progress_indeterminate = True
@@ -4527,7 +4464,8 @@ class TrollheimApp(tk.Tk):
             )
 
             for mode, label, win_rate, _is_base in self._run_tasks(
-                unique_tasks, progress_queue, total_simulations, completion_weights
+                unique_tasks, progress_queue, total_simulations, completion_weights,
+                self._simulation_cancel_event,
             ):
                 for alias_label, alias_is_base in aliases[(mode, label)]:
                     raw_results[mode].append((alias_label, win_rate, alias_is_base))
@@ -4555,6 +4493,10 @@ class TrollheimApp(tk.Tk):
                     for mode, _title in COMBAT_MODES
                 },
             )
+
+        except SimulationCancelled:
+            self._simulation_running = False
+            self.after(0, self._simulation_cancelled)
 
         except Exception as exc:
             self._simulation_running = False
@@ -4732,58 +4674,3 @@ class TrollheimApp(tk.Tk):
             "Error del simulador",
             str(exc),
         )
-
-    def update_ui_with_results(
-        self,
-        mode_results,
-        user_mode_key,
-        equipment,
-    ):
-        base_rates = {mode: data[0][1] for mode, data in mode_results.items()}
-        self._update_mode_cards(self.result_cards, base_rates, user_mode_key, equipment)
-        self._results_card_data = (base_rates, user_mode_key, equipment)
-
-        self._results_table_data = (mode_results, equipment)
-        self._results_generated_at = datetime.now().isoformat(timespec="seconds")
-        self._render_results_table()
-
-        active_progress_var = self._active_progress_var
-        active_status_label = self._active_status_label
-
-        self._finish_progress(active_progress_var, active_status_label, "Análisis completado")
-
-        self._enable_simulation_buttons()
-
-    def _render_results_table(self):
-        if not getattr(self, "_results_table_data", None):
-            return
-        mode_results, equipment = self._results_table_data
-        visible_modes = self.result_visible_modes
-        for item in self.results_tree.get_children():
-            self.results_tree.delete(item)
-
-        rows = {}
-        for mode, (_base_item, others) in mode_results.items():
-            for label, rate, impact in others:
-                rows.setdefault(label, {})[mode] = (rate, impact)
-
-        ordered_rows = sorted(
-            rows.items(),
-            key=lambda item: max(
-                item[1][mode][0] for mode in visible_modes
-            ),
-            reverse=True,
-        )
-        for label, values in ordered_rows:
-            best_mode = self._best_visible_mode(values, visible_modes)
-            cells = []
-            for mode, _title in COMBAT_MODES:
-                rate, impact = values[mode]
-                marker = "★ " if mode == best_mode else ""
-                cells.append(f"{marker}{rate:.2f}% ({impact:+.2f}%)")
-            optimal = f"★ {values[best_mode][0]:.2f}% ({values[best_mode][1]:+.2f}%)"
-            self.results_tree.insert(
-                "", "end",
-                values=(label, *cells, optimal, equipment[best_mode]),
-            )
-        self._autosize_tree_columns(self.results_tree)
