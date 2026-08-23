@@ -116,6 +116,20 @@ def test_spider_spit_improves_the_poisoned_weapon():
     assert win_rate(poisoned, defender) > win_rate(plain, defender) + 0.02
 
 
+def test_infallible_strike_improves_wound_rerolls():
+    plain = fighter(F=2, main_weapon="Espada")
+    infallible = fighter(F=2, main_weapon="Espada", skills=["Golpe Infalible"])
+    defender = fighter(R=4, HA=3, I=3, main_weapon="Maza")
+    assert win_rate(infallible, defender) > win_rate(plain, defender) + 0.04
+
+
+def test_elven_agility_reduces_enemy_win_rate():
+    attacker = fighter(A=2, main_weapon="Maza")
+    plain = fighter(HA=3, I=3, main_weapon="Espada")
+    agile = fighter(HA=3, I=3, main_weapon="Espada", skills=["Agilidad élfica"])
+    assert win_rate(attacker, agile) < win_rate(attacker, plain) - 0.02
+
+
 def test_unwinnable_duel_is_excluded_from_results():
     candidate = fighter(HA=1, F=1, R=10, I=1, main_weapon="Daga")
     enemies = np.stack([candidate.copy()])

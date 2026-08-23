@@ -57,6 +57,8 @@ def _skill_mask(skills):
             mask |= SKILL_FENCER
         elif skill == "Carga Imparable":
             mask |= SKILL_UNSTOPPABLE
+        elif skill == "Carga Feroz":
+            mask |= SKILL_FEROCIOUS_CHARGE
         elif skill == "Reflejos Felinos":
             mask |= SKILL_CAT_REFLEXES
         elif skill == "En Pie de un Salto":
@@ -73,6 +75,74 @@ def _skill_mask(skills):
             mask |= SKILL_SHIELD_STRIKE
         elif skill == "Barrido":
             mask |= SKILL_SWEEP
+        elif skill in ("Agilidad Élfica", "Agilidad élfica"):
+            mask |= SKILL_ELVEN_AGILITY
+        elif skill == "Armas del Norte":
+            mask |= SKILL_NORTHERN_WEAPONS
+        elif skill == "Bíceps Muy Desarrollados":
+            mask |= SKILL_TIRELESS
+        elif skill in ("Arte del Combate sin Armas", "El Arte del Combate sin Armas"):
+            mask |= SKILL_UNARMED_ART
+        elif skill == "Furia Roja":
+            mask |= SKILL_RED_FURY
+        elif skill == "Fuerza del Acero":
+            mask |= SKILL_CHARGE_STRENGTH
+        elif skill == "Golpe Demoledor":
+            mask |= SKILL_UNPARRYABLE
+        elif skill == "Golpe Infalible":
+            mask |= SKILL_REROLL_WOUNDS
+        elif skill == "Infalible":
+            mask |= SKILL_CHARGE_REROLL
+        elif skill == "Ignorar el dolor":
+            mask |= SKILL_IGNORE_PAIN
+        elif skill in ("Inocencia Perdida", "Inocencia Pérdida"):
+            mask |= SKILL_ALWAYS_FIRST
+        elif skill == "Maestro de la Espada":
+            mask |= SKILL_SWORD_MASTER
+        elif skill == "Guerrero Imbatible":
+            mask |= SKILL_UNBEATABLE
+        elif skill == "Lucha con Cuchillo":
+            mask |= SKILL_KNIFE_FIGHT
+        elif skill == "Maestría con el Escudo":
+            mask |= SKILL_SHIELD_MASTERY
+        elif skill == "Machacabezas":
+            mask |= SKILL_HEAD_CRUSHER
+        elif skill == "Maldición del Renacido":
+            mask |= SKILL_REGENERATION
+        elif skill == "Matador de Monstruos":
+            mask |= SKILL_MONSTER_SLAYER
+        elif skill == "Miniath":
+            mask |= SKILL_MINIATH
+        elif skill == "Monstruosidad":
+            mask |= SKILL_MONSTROUS
+        elif skill == "Muy Duro":
+            mask |= SKILL_VERY_TOUGH
+        elif skill == "Odio Infinito":
+            mask |= SKILL_REROLL_HITS
+        elif skill == "Postura Defensiva":
+            mask |= SKILL_DEFENSIVE_STANCE
+        elif skill in ("Piel endurecida", "Duro como el Acero"):
+            mask |= SKILL_HARDENED_SKIN
+        elif skill == "Reflejos de Vampiro":
+            mask |= SKILL_VAMPIRE_REFLEXES
+        elif skill == "Rugido de batalla":
+            mask |= SKILL_BATTLE_ROAR
+        elif skill == "Sermón Estimulante":
+            mask |= SKILL_RED_FURY
+        elif skill == "Señal de Sigmar":
+            mask |= SKILL_SIGMAR_SIGNAL
+        elif skill == "Tendones de Hierro":
+            mask |= SKILL_IRON_SINEWS
+        elif skill == "Constitución resistente":
+            mask |= SKILL_CRITICAL_RESISTANCE
+        elif skill in ("Cráneo de Piedra", "Kabezadura"):
+            mask |= SKILL_STONE_SKULL
+        elif skill == "Enloquecido":
+            mask |= SKILL_UNSTOPPABLE
+        elif skill == "Virtud del Valor":
+            mask |= SKILL_VALOUR
+        elif skill == "Suerte":
+            mask |= SKILL_LUCK
     return mask
 
 
@@ -152,15 +222,23 @@ def _make_fighter(config):
     armor_save = _armor_base_save(armor_name)
     if off == OFF_SHIELD and not (_is_two_handed(main) or _is_paired(main)):
         armor_save -= 1
+    if skills & SKILL_VERY_TOUGH:
+        armor_save -= 1
+
+    base_strength = config["F"] + bool(skills & SKILL_IRON_SINEWS)
+    base_wounds = config["H"] + bool(skills & SKILL_MONSTROUS)
+    base_attacks = config["A"] + bool(skills & SKILL_RED_FURY)
+    if skills & SKILL_UNARMED_ART and main in (WEAPON_UNARMED, WEAPON_ESHIN_CLAWS):
+        base_attacks += 1
 
     return np.array(
         [
             config["HA"],
-            config["F"] + (preparation == PREPARATION_CRIMSON_SHADE),
+            base_strength + (preparation == PREPARATION_CRIMSON_SHADE),
             config["R"] + (preparation == PREPARATION_MANDRAKE_ROOT),
-            config["H"],
+            base_wounds,
             config["I"],
-            config["A"],
+            base_attacks,
             main,
             off_weapon,
             armor_save,
@@ -282,11 +360,14 @@ def _parry_profile(fighter):
     main = int(fighter[6])
     off = int(fighter[7])
     axe_master = bool(int(fighter[9]) & SKILL_AXE_MASTER)
-    main_parry = _weapon_has_parry(main) or (axe_master and main == WEAPON_AXE)
+    defensive = bool(int(fighter[9]) & SKILL_DEFENSIVE_STANCE)
+    main_parry = _weapon_has_parry(main) or (axe_master and main == WEAPON_AXE) or defensive
     off_parry = _weapon_has_parry(off) or (axe_master and off == WEAPON_AXE)
     sources = int(main_parry) + int(off_parry)
     buckler = off == OFF_BUCKLER
     sources += int(buckler)
+    if off == OFF_SHIELD and int(fighter[9]) & SKILL_SHIELD_MASTERY:
+        sources += 1
     if main == WEAPON_DOUBLE_BLADE:
         return 2, False
     if main == WEAPON_ESHIN_CLAWS:
@@ -294,8 +375,13 @@ def _parry_profile(fighter):
     paired_parry = main == WEAPON_WEEPING_BLADES
     # Las erratas niegan expresamente la repetición por llevar dos espadas.
     # La rodela sólo la concede cuando acompaña a una espada normal.
-    reroll = buckler and main == WEAPON_SWORD
-    return (1 if sources or paired_parry else 0), reroll
+    reroll = (buckler and main == WEAPON_SWORD) or bool(
+        int(fighter[9]) & (SKILL_MINIATH | SKILL_SWORD_MASTER | SKILL_UNBEATABLE)
+    )
+    attempts = 1 if sources or paired_parry else 0
+    if int(fighter[9]) & SKILL_UNBEATABLE and sources >= 2:
+        attempts = 2
+    return attempts, reroll
 
 
 def _weapon_attacks_first(weapon):
@@ -351,6 +437,11 @@ def _phase_attack_plan(fighter, first_round, frenzy_extra=0, include_whip=False)
         weapons.append(int(fighter[6]))
         sources.append(0)
         kinds.append("frenzy")
+    if int(fighter[9]) & SKILL_FEROCIOUS_CHARGE:
+        for _ in range(int(fighter[5])):
+            weapons.append(int(fighter[6]))
+            sources.append(0)
+            kinds.append("ferocious")
     whip, source = _whip_weapon_and_source(fighter)
     if include_whip and whip >= 0:
         weapons.append(whip)
@@ -398,6 +489,8 @@ def _attack_priority_rows(
     )
     if int(fighter[9]) & SKILL_CAT_REFLEXES:
         attacks_first = attacks_first | charged
+    if int(fighter[9]) & SKILL_ALWAYS_FIRST:
+        attacks_first = np.ones(shape, dtype=bool)
     if whip_extra:
         attacks_first = attacks_first | charged
     priority[attacks_first] = PRIORITY_FIRST
@@ -425,6 +518,8 @@ def _stage_has_attacks(
         active = np.ones(shape, dtype=bool)
         if kind == "frenzy":
             active &= np.broadcast_to(frenzy_active, shape)
+        elif kind == "ferocious":
+            active &= np.broadcast_to(charging, shape)
         elif kind == "whip":
             active &= np.broadcast_to(charging | charged, shape)
         priority = _attack_priority_rows(
@@ -602,6 +697,17 @@ def _can_parry(attacker_strength, defender_basic_strength):
     return attacker_strength < 2 * defender_basic_strength
 
 
+def _melee_special_save_target(fighter):
+    skills = int(fighter[9])
+    if skills & SKILL_ELVEN_AGILITY:
+        return 4 if skills & SKILL_SIDESTEP else 6
+    if skills & SKILL_SIDESTEP:
+        return 5
+    if skills & SKILL_VAMPIRE_REFLEXES:
+        return 6
+    return 7
+
+
 def _should_sweep(attacker, defender, attack_count):
     if not (int(attacker[9]) & SKILL_SWEEP) or not _is_two_handed(int(attacker[6])):
         return False
@@ -741,8 +847,9 @@ def _vector_automatic_hit(rng, rows, defender, wounds, states, strength, weapon)
     if save_target <= 6:
         saved = rng.integers(1, 7, affected.size) >= save_target
         affected = affected[~saved]
-    if int(defender[9]) & SKILL_SIDESTEP and affected.size:
-        affected = affected[rng.integers(1, 7, affected.size) < 5]
+    special_save = _melee_special_save_target(defender)
+    if special_save <= 6 and affected.size:
+        affected = affected[rng.integers(1, 7, affected.size) < special_save]
     if affected.size == 0:
         return
     damage = 2 if weapon == WEAPON_BRAZIER_STAFF and int(defender[17]) == ARMOR_CHITIN else 1
@@ -758,7 +865,8 @@ def _vector_automatic_hit(rng, rows, defender, wounds, states, strength, weapon)
                 _vector_injury(
                     rng, injured.size, weapon, bool(defender[10]),
                     bool(int(defender[9]) & SKILL_SPRING_UP),
-                    int(defender[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                    (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                     or bool(int(defender[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
 
@@ -781,8 +889,9 @@ def _vector_cutlass_counterattack(rng, rows, attacker, defender, wounds, states)
     save_target = max(2, int(attacker[8]) - 1) + max(0, strength - 3)
     if save_target <= 6:
         targets = targets[rng.integers(1, 7, targets.size) < save_target]
-    if int(attacker[9]) & SKILL_SIDESTEP and targets.size:
-        targets = targets[rng.integers(1, 7, targets.size) < 5]
+    special_save = _melee_special_save_target(attacker)
+    if special_save <= 6 and targets.size:
+        targets = targets[rng.integers(1, 7, targets.size) < special_save]
     if targets.size:
         wounds[targets] -= 1
         injured = targets[wounds[targets] <= 0]
@@ -792,7 +901,8 @@ def _vector_cutlass_counterattack(rng, rows, attacker, defender, wounds, states)
                 _vector_injury(
                     rng, injured.size, WEAPON_DAGGER, bool(attacker[10]),
                     bool(int(attacker[9]) & SKILL_SPRING_UP),
-                    int(attacker[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                    (int(attacker[14]) == PREPARATION_MANDRAKE_ROOT
+                     or bool(int(attacker[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
 
@@ -857,7 +967,8 @@ def _vector_attack_phase(
                 _vector_injury(
                     rng, injured.size, WEAPON_CENSER, bool(attacker[10]),
                     bool(int(attacker[9]) & SKILL_SPRING_UP),
-                    int(attacker[14]) == PREPARATION_MANDRAKE_ROOT, False, 0,
+                    (int(attacker[14]) == PREPARATION_MANDRAKE_ROOT
+                     or bool(int(attacker[9]) & SKILL_IGNORE_PAIN)), False, 0,
                 ),
             )
         rows = rows[attacker_state[rows] == STATE_STANDING]
@@ -940,9 +1051,37 @@ def _vector_attack_phase(
             reroll = charging_rows & (
                 rolls < np.where(charging_rows, adjusted_charge_hit_target, adjusted_hit_target)
             )
+        if int(attacker[9]) & SKILL_NORTHERN_WEAPONS and (
+            weapon in (WEAPON_AXE, WEAPON_DWARF_AXE) or _is_two_handed(weapon)
+        ):
+            reroll |= rolls < np.where(
+                charging_rows, adjusted_charge_hit_target, adjusted_hit_target
+            )
+        if int(attacker[9]) & SKILL_REROLL_HITS:
+            reroll |= rolls < np.where(
+                charging_rows, adjusted_charge_hit_target, adjusted_hit_target
+            )
+        if int(attacker[9]) & SKILL_CHARGE_REROLL:
+            reroll |= charging_rows & (
+                rolls < np.where(
+                    charging_rows, adjusted_charge_hit_target, adjusted_hit_target
+                )
+            )
+        if first_round and attack == 0 and int(attacker[9]) & SKILL_LUCK:
+            reroll |= rolls < np.where(
+                charging_rows, adjusted_charge_hit_target, adjusted_hit_target
+            )
         rolls[reroll] = rng.integers(1, 7, int(reroll.sum()))
         hit_rolls[:, attack] = rolls
         current_hit_target = np.where(charging_rows, charge_hit_target, hit_target)
+        if int(attacker[9]) & SKILL_KNIFE_FIGHT and weapon in (
+            WEAPON_DAGGER, WEAPON_YAMBIYA,
+        ):
+            current_hit_target[:] = _nb_to_hit(int(attacker[0]) + 1, int(defender[0]))
+        if int(attacker[9]) & SKILL_FEROCIOUS_CHARGE:
+            current_hit_target = current_hit_target + charging_rows
+        if first_round and int(defender[9]) & SKILL_BATTLE_ROAR:
+            current_hit_target = current_hit_target + 1
         if weapon == WEAPON_SERPENT_STAFF:
             current_hit_target[:] = _nb_to_hit(4, int(defender[0]))
         if weapon == WEAPON_DUELING_PISTOL:
@@ -951,9 +1090,19 @@ def _vector_attack_phase(
             current_hit_target = np.minimum(6, current_hit_target + 1)
         current_hit_target = np.minimum(6, current_hit_target + house_penalty)
         hit_active[:, attack] = automatic if sweep else (automatic | (rolls >= current_hit_target))
+        if (
+            first_round and int(defender[9]) & SKILL_SIGMAR_SIGNAL
+            and int(attacker[FIGHTER_UNDEAD_OR_POSSESSED])
+            and attack == 0 and attack_count > 1
+        ):
+            hit_active[:, attack] = False
+            attack_enabled[:, attack] = False
         if plan_kinds[attack] == "frenzy":
             attack_enabled[~frenzy_rows, attack] = False
             hit_active[~frenzy_rows, attack] = False
+        elif plan_kinds[attack] == "ferocious":
+            attack_enabled[~charging_rows, attack] = False
+            hit_active[~charging_rows, attack] = False
         elif plan_kinds[attack] == "whip":
             attack_enabled[~(charging_rows | charged_rows), attack] = False
             hit_active[~(charging_rows | charged_rows), attack] = False
@@ -973,7 +1122,7 @@ def _vector_attack_phase(
     blocks_parry = int(attacker[6]) in (
         WEAPON_WAR_MAUL, WEAPON_CHAINED_SQUIG,
     )
-    if parry_attempts and not blocks_parry:
+    if parry_attempts and not blocks_parry and not int(attacker[9]) & SKILL_UNPARRYABLE:
         any_parried = np.zeros(rows.size, dtype=bool)
         parried_weapon = np.full(rows.size, OFF_NONE, dtype=np.int16)
         eligible = hit_active[:, :attack_count].copy()
@@ -1003,7 +1152,14 @@ def _vector_attack_phase(
         if reroll_failed_parry:
             failed = (best_roll > 0) & (parry_rolls <= best_roll)
             parry_rolls[failed] = rng.integers(1, 7, int(failed.sum()))
-        parried = (best_roll > 0) & (parry_rolls > best_roll)
+        equal_parry = bool(
+            int(defender[9]) & (
+                SKILL_SWORD_MASTER | SKILL_UNBEATABLE | SKILL_DEFENSIVE_STANCE
+            )
+        )
+        parried = (best_roll > 0) & (
+            parry_rolls >= best_roll if equal_parry else parry_rolls > best_roll
+        )
         any_parried |= parried
         parried_weapon[parried] = weapons[best[parried]]
         hit_active[np.arange(rows.size)[parried], best[parried]] = False
@@ -1012,7 +1168,10 @@ def _vector_attack_phase(
             values = np.where(eligible, hit_rolls[:, :attack_count], 0)
             best = values.argmax(axis=1)
             best_roll = values[np.arange(rows.size), best]
-            parried = (best_roll > 0) & (rng.integers(1, 7, rows.size) > best_roll)
+            second_roll = rng.integers(1, 7, rows.size)
+            parried = (best_roll > 0) & (
+                second_roll >= best_roll if equal_parry else second_roll > best_roll
+            )
             any_parried |= parried
             parried_weapon[parried] = weapons[best[parried]]
             hit_active[np.arange(rows.size)[parried], best[parried]] = False
@@ -1114,7 +1273,8 @@ def _vector_attack_phase(
                 defender_state[injured] = _vector_injury(
                     rng, injured.size, weapon, bool(defender[10]),
                     bool(int(defender[9]) & SKILL_SPRING_UP),
-                    int(defender[14]) == PREPARATION_MANDRAKE_ROOT,
+                    (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                     or bool(int(defender[9]) & SKILL_IGNORE_PAIN)),
                     False, int(weapon == WEAPON_PLAGUE_DAGGER),
                 )
         strength = _attack_strength(
@@ -1126,11 +1286,20 @@ def _vector_attack_phase(
             and _poison_for_attack(attacker, source_index) in (POISON_BLACK_VENOM, POISON_REPTILE)
         ):
             strength -= 1
-        wound_target = _nb_to_wound(strength, int(defender[2]))
+        wound_target = np.full(
+            targets.size, _nb_to_wound(strength, int(defender[2])), dtype=np.int8
+        )
+        if int(attacker[9]) & SKILL_CHARGE_STRENGTH:
+            charging_targets = charging_rows[targets]
+            wound_target[charging_targets] = _nb_to_wound(
+                strength + 1, int(defender[2])
+            )
+        if int(attacker[9]) & SKILL_MONSTER_SLAYER:
+            wound_target = np.minimum(4, wound_target)
         lotus = np.zeros(targets.size, dtype=bool)
         if poison == POISON_BLACK_LOTUS:
             lotus = hit_rolls[targets, attack] == 6
-        if wound_target > 6 and not lotus.any():
+        if np.all(wound_target > 6) and not lotus.any():
             attack += 1
             continue
         wound_rolls = rng.integers(1, 7, targets.size)
@@ -1149,7 +1318,16 @@ def _vector_attack_phase(
             if failed.any():
                 wound_rolls[failed] = rng.integers(1, 7, int(failed.sum()))
                 effective[failed] = wound_rolls[failed] + bool(int(attacker[9]) & SKILL_EXPERT)
-                wounded[failed] = effective[failed] >= wound_target
+                wounded[failed] = effective[failed] >= wound_target[failed]
+                rerolled[failed] = True
+        elif int(attacker[9]) & SKILL_REROLL_WOUNDS:
+            failed = ~wounded
+            if failed.any():
+                wound_rolls[failed] = rng.integers(1, 7, int(failed.sum()))
+                effective[failed] = wound_rolls[failed] + bool(
+                    int(attacker[9]) & SKILL_EXPERT
+                )
+                wounded[failed] = effective[failed] >= wound_target[failed]
                 rerolled[failed] = True
         if weapon == WEAPON_RAPIER and queued < capacity:
             failed = targets[~wounded]
@@ -1176,6 +1354,7 @@ def _vector_attack_phase(
                     queued += 1
         targets = targets[wounded]
         wound_rolls = wound_rolls[wounded]
+        wound_target = wound_target[wounded]
         rerolled = rerolled[wounded]
         lotus = lotus[wounded]
         if targets.size == 0:
@@ -1188,6 +1367,9 @@ def _vector_attack_phase(
             (wound_rolls >= critical_needed) & (lotus | (wound_target < 6))
             & ~critical_used[targets] & ~rerolled
         )
+        if int(defender[9]) & SKILL_CRITICAL_RESISTANCE and critical.any():
+            ignored = rng.integers(1, 7, int(critical.sum())) >= 5
+            critical[np.flatnonzero(critical)[ignored]] = False
         critical_used[targets[critical]] = True
         damage = np.ones(targets.size, dtype=np.int8)
         ignore_armour = np.full(
@@ -1196,7 +1378,11 @@ def _vector_attack_phase(
             dtype=bool,
         )
         injury_modifier = np.full(
-            targets.size, int(weapon == WEAPON_DEATH_KNIFE), dtype=np.int8
+            targets.size,
+            int(weapon == WEAPON_DEATH_KNIFE)
+            + int(bool(int(attacker[9]) & SKILL_KNIFE_FIGHT)
+                  and weapon in (WEAPON_DAGGER, WEAPON_YAMBIYA)),
+            dtype=np.int8,
         )
         if critical.any():
             rolls = rng.integers(1, 7, int(critical.sum()))
@@ -1221,18 +1407,24 @@ def _vector_attack_phase(
             and _poison_for_attack(attacker, source_index) == POISON_BLACK_VENOM
         ):
             armour_strength -= 1
-        save_target = (
+        save_target_value = (
             _nb_armour_save(int(defender[8]), weapon)
             + max(0, armour_strength - 3)
             + _extra_armour_penalty(attacker, weapon, source_index)
         )
+        save_target = np.full(targets.size, save_target_value, dtype=np.int8)
+        if int(attacker[9]) & SKILL_CHARGE_STRENGTH and armour_strength >= 3:
+            save_target[charging_rows[targets]] += 1
         saved = np.zeros(targets.size, dtype=bool)
         can_save = ~ignore_armour & (save_target <= 6)
-        saved[can_save] = rng.integers(1, 7, int(can_save.sum())) >= save_target
+        saved[can_save] = (
+            rng.integers(1, 7, int(can_save.sum())) >= save_target[can_save]
+        )
         if int(defender[17]) == ARMOR_ESHIN_ROBES:
             reroll_save = can_save & ~saved
             saved[reroll_save] = (
-                rng.integers(1, 7, int(reroll_save.sum())) >= save_target
+                rng.integers(1, 7, int(reroll_save.sum()))
+                >= save_target[reroll_save]
             )
         targets = targets[~saved]
         damage = damage[~saved]
@@ -1243,11 +1435,22 @@ def _vector_attack_phase(
             continue
         if poison == POISON_BLOODROOT:
             damage *= 2
-        if int(defender[9]) & SKILL_SIDESTEP:
-            dodged = rng.integers(1, 7, targets.size) >= 5
+        dodge_target = _melee_special_save_target(defender)
+        if dodge_target <= 6:
+            dodged = rng.integers(1, 7, targets.size) >= dodge_target
             targets = targets[~dodged]
             damage = damage[~dodged]
             injury_modifier = injury_modifier[~dodged]
+            global_rows = rows[targets]
+        if targets.size == 0:
+            attack += 1
+            continue
+
+        if int(defender[9]) & SKILL_REGENERATION:
+            regenerated = rng.integers(1, 7, targets.size) >= 4
+            targets = targets[~regenerated]
+            damage = damage[~regenerated]
+            injury_modifier = injury_modifier[~regenerated]
             global_rows = rows[targets]
         if targets.size == 0:
             attack += 1
@@ -1263,7 +1466,7 @@ def _vector_attack_phase(
         defender_state[auto_rows] = STATE_OUT
         normal = ~knocked_down[targets]
         for amount in (1, 2, 3, 4):
-            for modifier in (0, 2):
+            for modifier in (0, 1, 2):
                 group = normal & (damage == amount) & (injury_modifier == modifier)
                 affected = global_rows[group]
                 for _ in range(amount):
@@ -1276,10 +1479,26 @@ def _vector_attack_phase(
                         injury = _vector_injury(
                             rng, injured.size, weapon, bool(defender[10]),
                             bool(int(defender[9]) & SKILL_SPRING_UP),
-                            int(defender[14]) == PREPARATION_MANDRAKE_ROOT,
+                            (int(defender[14]) == PREPARATION_MANDRAKE_ROOT
+                             or bool(int(defender[9]) & SKILL_IGNORE_PAIN)),
                             _material_for_attack(attacker, source_index) == MATERIAL_DARK_STEEL,
                             modifier,
                         )
+                        if int(attacker[9]) & SKILL_HEAD_CRUSHER:
+                            injury[injury == STATE_KNOCKED_DOWN] = STATE_STUNNED
+                        if int(defender[9]) & SKILL_HARDENED_SKIN:
+                            out = injury == STATE_OUT
+                            downgrade = out & (
+                                rng.integers(1, 7, injury.size) <= 3
+                            )
+                            injury[downgrade] = STATE_STUNNED
+                        if int(defender[9]) & SKILL_STONE_SKULL:
+                            stunned = injury == STATE_STUNNED
+                            threshold = 2 if bool(defender[10]) else 3
+                            recovered = stunned & (
+                                rng.integers(1, 7, injury.size) >= threshold
+                            )
+                            injury[recovered] = STATE_KNOCKED_DOWN
                         defender_state[injured] = np.maximum(
                             defender_state[injured], injury
                         )
