@@ -2,7 +2,12 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from trollheim_simulator.candidate_catalog import find_profile, load_bands
+from trollheim_simulator.candidate_catalog import (
+    equipment_costs_for_profile,
+    equipment_options_for_profile,
+    find_profile,
+    load_bands,
+)
 from trollheim_simulator.ui import TrollheimApp
 from trollheim_simulator.workbooks import (
     DATA_SHEET,
@@ -55,6 +60,43 @@ def _payload():
             ],
         },
     }
+
+
+def test_equipment_filter_respects_profile_specific_restrictions():
+    witch = set(equipment_options_for_profile(
+        "lustria-goblins-salvajes", "savage-goblin-witch-doctor"
+    ))
+    boss = set(equipment_options_for_profile(
+        "lustria-goblins-salvajes", "savage-goblin-big-boss"
+    ))
+    henchman = set(equipment_options_for_profile(
+        "lustria-goblins-salvajes", "savage-goblin"
+    ))
+    assert {"Veneno Negro", "Armadura Kitinoza"} <= witch
+    assert {"Amuleto de la suerte", "Loto Negro"} <= boss
+    assert "Amuleto de la suerte" not in henchman
+
+
+def test_general_market_equipment_respects_faction_restrictions():
+    matriarch = set(equipment_options_for_profile(
+        "trollheim-sisters-of-sigmar", "sigmarite-matriarch"
+    ))
+    assassin = set(equipment_options_for_profile(
+        "trollheim-skaven", "eshin-assassin"
+    ))
+    assert "Amuleto de la suerte" in matriarch
+    assert "Saliva de Araña" in assassin
+    assert "Loto Negro" not in matriarch
+    assert "Veneno Negro" not in matriarch
+
+
+def test_equipment_costs_use_band_prices_and_expected_dice_values():
+    costs = equipment_costs_for_profile(
+        "lustria-elfos-oscuros", "dark-elf-beastmaster"
+    )
+    assert costs["Armadura Ligera"] == 50.0
+    assert costs["Capa de Dragón Marino"] == 57.0
+    assert equipment_costs_for_profile()["Amuleto de la suerte"] == 10.0
 
 
 def test_canonical_candidate_catalog_is_complete():

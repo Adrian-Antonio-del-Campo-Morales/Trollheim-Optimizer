@@ -217,8 +217,8 @@ def test_tree_sort_keys_never_mix_incompatible_types():
     sorted(values, key=TrollheimApp._tree_sort_key)
 
 
-def test_combo_default_is_ten_thousand():
-    assert DEFAULT_COMBO_SIMULATIONS == 10_000
+def test_analysis_default_is_one_hundred_thousand():
+    assert DEFAULT_COMBO_SIMULATIONS == 100_000
 
 
 def test_luck_amulet_is_not_an_upgrade_anymore():
@@ -247,6 +247,23 @@ def test_equipment_loadout_starts_without_optional_equipment():
     assert equipped["armor"] == "Armadura Ligera"
     assert not equipped["has_helmet"]
     assert equipped["has_luck_amulet"]
+
+
+def test_owned_equipment_is_deducted_once_from_combination_cost():
+    candidate = FIGHTER | {
+        "armor": "Armadura Ligera", "has_helmet": True,
+        "main_poison": "Loto Negro", "offhand_poison": "Sin veneno",
+    }
+    costs = {"Armadura Ligera": 20.0, "Casco": 10.0, "Loto Negro": 13.5}
+    assert TrollheimApp._equipment_acquisition_costs(
+        ("Casco", "Armadura Ligera", "Loto Negro"), candidate, costs
+    ) == (0.0, 0.0, 0.0)
+    assert TrollheimApp._equipment_acquisition_costs(
+        ("Loto Negro", "Loto Negro"), candidate, costs
+    ) == (0.0, 13.5)
+    display, total = TrollheimApp._equipment_cost_display((0.0, 13.5))
+    assert display == "0 + 13.5 = 13.5 co"
+    assert total == 13.5
 
 
 def test_only_poison_can_be_selected_twice():
