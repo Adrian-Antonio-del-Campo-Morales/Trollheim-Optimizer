@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 
+import trollheim_simulator.engine as engine
 from trollheim_simulator.engine import (
     ENEMY_VARIANTS_PER_PROFILE,
     _build_enemy_variants,
@@ -81,6 +82,22 @@ def test_worker_runs_a_small_custom_matchup():
     assert progress.get_nowait() == ("chunk", 0, total)
 
 
+def test_worker_accepts_multiple_manual_enemies_with_shared_selection():
+    total = 200
+    enemies = [
+        FIGHTER | {"enemy_name": "Espadachín"},
+        FIGHTER | {"enemy_name": "Bruto", "F": 4, "main_weapon": "Maza"},
+    ]
+    indices = np.tile(np.array([0, 1], dtype=np.int64), total // 2)
+    args = (
+        "Single", "varios", FIGHTER, "custom", enemies, [], indices,
+        total, 77, True, None, 0, 0,
+    )
+    mode, label, win_rate, is_base = run_single_task_optimized(args)
+    assert (mode, label, is_base) == ("Single", "varios", True)
+    assert 0.0 <= win_rate <= 100.0
+
+
 def test_random_enemy_equipment_is_legal_and_levels_are_applied():
     rng = np.random.default_rng(9)
     config = _random_enemy_config("Guerrero humano", 4, rng)
@@ -96,7 +113,7 @@ def test_random_enemy_equipment_is_legal_and_levels_are_applied():
 
 def test_enemy_variants_have_expected_shape():
     enemies, owners = _build_enemy_variants(["Zombi", "Vampiro"], 2, 123, 5)
-    assert enemies.shape == (10, 19)
+    assert enemies.shape == (10, 22)
     assert owners.tolist() == [0] * 5 + [1] * 5
 
 
@@ -115,6 +132,37 @@ def test_vectorized_engine_has_no_compilation_pause():
     elapsed = time.perf_counter() - started
     assert 0.0 <= result[2] <= 100.0
     assert elapsed < 3.0
+
+
+def test_simulation_batch_is_split_into_small_chunks(monkeypatch):
+    candidate = engine._make_fighter(FIGHTER)
+    enemies = np.asarray([engine._make_fighter(FIGHTER | {"main_weapon": "Maza"})])
+    sizes = []
+
+    def fake_kernel(_candidate, _enemy, amount, _seed):
+        sizes.append(amount)
+        return amount, amount
+
+    monkeypatch.setattr(engine, "_simulate_simple_native", fake_kernel)
+    total = 250_000
+    wins, resolved = engine._simulate_batch(
+        candidate, enemies, np.zeros(total, dtype=np.int8), total, 42
+    )
+    assert sizes == [100_000, 100_000, 50_000]
+    assert (wins, resolved) == (total, total)
+
+
+def test_native_route_only_accepts_simple_fighters(monkeypatch):
+    monkeypatch.setattr(engine, "_simulate_simple_native", lambda *_args: (0, 0))
+    simple = engine._make_fighter(FIGHTER)
+    assert engine._can_use_native_kernel(simple, simple)
+
+    skilled = engine._make_fighter(FIGHTER | {"skills": ["Fortachón"]})
+    poisoned = engine._make_fighter(FIGHTER | {"main_poison": "Loto Negro"})
+    special = engine._make_fighter(FIGHTER | {"main_weapon": "Látigo de Acero"})
+    assert not engine._can_use_native_kernel(skilled, simple)
+    assert not engine._can_use_native_kernel(poisoned, simple)
+    assert not engine._can_use_native_kernel(special, simple)
 
 
 def test_effective_key_ignores_equipment_specific_skills_when_inert():
@@ -138,13 +186,13 @@ def test_effective_key_never_drops_general_combat_skills():
         assert effective_fighter_key(FIGHTER) != effective_fighter_key(upgraded)
 
 
-def test_combo_deduplication_preserves_aliases_for_inert_skills():
+def test_task_deduplication_preserves_aliases_for_inert_skills():
     base_task = ("Single", "base", FIGHTER, None, None, None, None, 100, 1, True)
     inert_task = (
         "Single", "maestro sin hacha", FIGHTER | {"skills": ["Maestro del Hacha"]},
         None, None, None, None, 100, 2, False,
     )
-    unique, aliases = TrollheimApp._deduplicate_combo_tasks([base_task, inert_task])
+    unique, aliases = TrollheimApp._deduplicate_tasks([base_task, inert_task])
     assert len(unique) == 1
     assert aliases[("Single", "base")] == [
         ("base", True),
@@ -152,13 +200,13 @@ def test_combo_deduplication_preserves_aliases_for_inert_skills():
     ]
 
 
-def test_combo_deduplication_keeps_active_skills_separate():
+def test_task_deduplication_keeps_active_skills_separate():
     base_task = ("Single", "base", FIGHTER, None, None, None, None, 100, 1, True)
     active_task = (
         "Single", "esgrima", FIGHTER | {"skills": ["Experto en Esgrima"]},
         None, None, None, None, 100, 2, False,
     )
-    unique, _aliases = TrollheimApp._deduplicate_combo_tasks([base_task, active_task])
+    unique, _aliases = TrollheimApp._deduplicate_tasks([base_task, active_task])
     assert len(unique) == 2
 
 
@@ -203,9 +251,10 @@ def test_only_poison_can_be_selected_twice():
     armor = ("Armadura Ligera", "armor", "Armadura Ligera")
     amulet = ("Amuleto de la suerte", "amulet", True)
     poison = ("Loto Negro", "poison", "Loto Negro")
-    assert not TrollheimApp._equipment_pair_is_legal(armor, armor)
-    assert not TrollheimApp._equipment_pair_is_legal(amulet, amulet)
-    assert TrollheimApp._equipment_pair_is_legal(poison, poison)
+    legal = TrollheimApp._equipment_combination_is_legal
+    assert not legal((armor, armor))
+    assert not legal((amulet, amulet))
+    assert legal((poison, poison))
 
 
 def test_equipment_loadouts_can_include_legal_triples():
@@ -262,6 +311,12 @@ def test_spiked_gauntlet_is_the_exception_for_difficult_weapons():
     )
     assert ("Dual", "Rebanadora", "Guantelete con Pincho") in loadouts
     assert ("Dual", "Pinchagarrapatos", "Guantelete con Pincho") in loadouts
+
+
+def test_sun_gauntlet_is_only_generated_in_the_off_hand():
+    loadouts = TrollheimApp._weapon_loadouts(["Espada", "Guantelete Solar"])
+    assert not any(main == "Guantelete Solar" for _mode, main, _off in loadouts)
+    assert ("Dual", "Espada", "Guantelete Solar") in loadouts
 
 
 def test_two_poisons_are_applied_one_to_each_hand():

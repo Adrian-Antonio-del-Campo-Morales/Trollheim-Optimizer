@@ -1,0 +1,208 @@
+id: lustria-goblins-salvajes
+name: Goblins Zalvajes
+source: {manual: lustria, printed_page: 96-105, section: Goblins Zalvajes}
+roster:
+  minimum_models: 3
+  maximum_models: 20
+  starting_gold: 500
+  members:
+    - {profile_id: savage-goblin-witch-doctor, minimum: 1, maximum: 1}
+    - {profile_id: savage-goblin-big-boss, minimum: 0, maximum: 1}
+    - {profile_id: savage-goblin-red-tooth, minimum: 0, maximum: 2}
+    - {profile_id: savage-goblin-tracker, minimum: 0, maximum: 2}
+    - {profile_id: savage-goblin, minimum: 0, maximum: null}
+    - {profile_id: savage-goblin-headhunter, minimum: 0, maximum: 5}
+    - {profile_id: savage-goblin-bruiser, minimum: 0, maximum: 5}
+    - {profile_id: savage-goblin-zomblin, minimum: 0, maximum: 5}
+    - {profile_id: savage-goblin-zomblintua, minimum: 0, maximum: 1}
+equipment_lists:
+  - id: savage-goblin-hero-equipment
+    name: Equipo para Héroes
+    source: {manual: lustria, printed_page: 97, section: Lista de Equipo para Héroes}
+    items:
+      - {item_id: dagger, cost: 2, notes: La primera es gratis}
+      - {item_id: club, cost: 3}
+      - {item_id: sacrifice_dagger, cost: 10}
+      - {item_id: sword, cost: 10}
+      - {item_id: spear, cost: 10}
+      - {item_id: halberd, cost: 10}
+      - {item_id: great_weapon, cost: 15}
+      - {item_id: short_bow, cost: 5}
+      - {item_id: bolas, cost: 5}
+      - {item_id: javelin, cost: 10}
+      - {item_id: shrunken_head, cost: 25}
+      - {item_id: blowpipe, cost: 25}
+      - {item_id: shield, cost: 5}
+      - {item_id: light_armour, cost: 20}
+      - {item_id: spider_chitin_armour, cost: 80, notes: La lista de equipo indica 70 co; la descripción de la página 99 indica 80 co}
+      - {item_id: feather_headdress, cost: 20, notes: Solo Jefe de la banda}
+      - {item_id: black_venom, cost: 20, notes: Solo Médiko Brujo}
+      - {item_id: black_lotus, cost: 10, notes: Solo Jefe de la banda}
+      - {item_id: spider_spit, cost: 25, notes: Solo durante la creación de la banda}
+      - {item_id: magic_tattoos, cost: 30, notes: Solo durante la creación de la banda}
+  - id: savage-goblin-henchman-equipment
+    name: Equipo para Secuaces
+    source: {manual: lustria, printed_page: 97, section: Lista de Equipo para Secuaces}
+    items:
+      - {item_id: dagger, cost: 2, notes: La primera es gratis}
+      - {item_id: club, cost: 3}
+      - {item_id: sword, cost: 10}
+      - {item_id: spear, cost: 10}
+      - {item_id: short_bow, cost: 5}
+      - {item_id: bolas, cost: 5}
+      - {item_id: javelin, cost: 10}
+      - {item_id: shield, cost: 5}
+  - id: savage-goblin-bruiser-equipment
+    name: Equipo para Aporreadores
+    source: {manual: lustria, printed_page: 97, section: Lista de Equipo para Aporreadores}
+    items:
+      - {item_id: dagger, cost: 2, notes: La primera es gratis}
+      - {item_id: club, cost: 3}
+      - {item_id: two_handed_club, cost: 15}
+      - {item_id: shield, cost: 5}
+      - {item_id: hardened_leather, cost: 5}
+profiles:
+  - id: savage-goblin-witch-doctor
+    name: Médiko Brujo
+    type: hero
+    cost: 65
+    experience: 20
+    characteristics: {M: 10, WS: 3, BS: 4, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 6}
+    equipment_lists: [savage-goblin-hero-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: [academic, speed, special]
+    rules:
+      - {id: savage-goblin-leader, name: Jefe, effect: Los guerreros a 15 cm o menos pueden utilizar su Liderazgo., source: {manual: lustria, printed_page: 100, section: Médiko Brujo}}
+      - {id: savage-goblin-spellcaster, name: Hechicero, effect: Usa la magia del Pequeño WAAAGH Forestal y comienza con un hechizo al azar; sus reglas individuales quedan fuera del alcance canónico actual., source: {manual: lustria, printed_page: 100, section: Médiko Brujo}}
+      - {id: savage-goblin-return-from-darkness, name: Volver de la Ozkuridad, effect: Puede añadir gratis un Zomblin por cada Goblin Primitivo muerto, hasta el máximo de banda. Si mueren más de seis, los siguientes solo se reaniman con 4+ en 1D6. Nunca puede haber más de cinco Zomblins., source: {manual: lustria, printed_page: 100, section: Médiko Brujo}}
+    source: {manual: lustria, printed_page: 100, section: Médiko Brujo}
+  - id: savage-goblin-big-boss
+    name: Gran Jefe
+    type: hero
+    cost: 50
+    experience: 10
+    characteristics: {M: 10, WS: 3, BS: 4, S: 3, T: 3, W: 1, I: 4, A: 1, Ld: 7}
+    equipment_lists: [savage-goblin-hero-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: [combat, shooting, speed, special]
+    rules:
+      - {id: savage-goblin-second-in-command, name: Segundo al mando, effect: Actúa como Jefe cuando no puede usarse el Liderazgo del Médiko Brujo. Si este muere, el Gran Jefe deja de ser Jefe al reclutarse otro Médiko., source: {manual: lustria, printed_page: 100, section: Gran Jefe}}
+    source: {manual: lustria, printed_page: 100, section: Gran Jefe}
+  - id: savage-goblin-red-tooth
+    name: Dientez Rojoz
+    type: hero
+    cost: 35
+    experience: 6
+    characteristics: {M: 10, WS: 3, BS: 3, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 6}
+    equipment_lists: [savage-goblin-hero-equipment]
+    fixed_equipment: []
+    equipment_restrictions: [No puede usar armas de proyectiles salvo que posean Arma arrojadiza]
+    skill_access: [combat, strength, speed, special]
+    rules:
+      - {id: frenzy, name: Furia asesina, effect: Está sujeto a furia asesina., source: {manual: lustria, printed_page: 101, section: Dientez Rojoz}}
+    source: {manual: lustria, printed_page: 101, section: Dientez Rojoz}
+  - id: savage-goblin-tracker
+    name: Montaraz
+    type: hero
+    cost: 30
+    experience: 6
+    characteristics: {M: 10, WS: 3, BS: 3, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 6}
+    equipment_lists: [savage-goblin-hero-equipment]
+    fixed_equipment: [Cuerda, Garfio, Bolas]
+    equipment_restrictions: [No puede vender ni transferir su cuerda, garfio o bolas; se reponen gratis]
+    skill_access: [combat, shooting, speed, special]
+    rules:
+      - {id: savage-goblin-tracker-kit, name: Kachivachez de Montaraz, effect: Comienza con cuerda, garfio y bolas; no pueden venderse ni darse y se reponen gratis si se pierden., source: {manual: lustria, printed_page: 101, section: Montarazes}}
+    source: {manual: lustria, printed_page: 101, section: Montarazes}
+  - id: savage-goblin
+    name: Goblin Zalvaje
+    type: henchman
+    cost: 15
+    experience: 0
+    characteristics: {M: 10, WS: 2, BS: 3, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 5}
+    equipment_lists: [savage-goblin-henchman-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: []
+    rules: [{id: savage-goblin-animosity, name: Animosidad, effect: Está sujeto a Animosidad., source: {manual: lustria, printed_page: 102, section: Goblins Zalvajes}}]
+    source: {manual: lustria, printed_page: 102, section: Goblins Zalvajes}
+  - id: savage-goblin-headhunter
+    name: Kazakabezas
+    type: henchman
+    cost: 25
+    experience: 0
+    characteristics: {M: 10, WS: 2, BS: 4, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 6}
+    equipment_lists: [savage-goblin-henchman-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: []
+    rules: [{id: savage-goblin-animosity, name: Animosidad, effect: Está sujeto a Animosidad., source: {manual: lustria, printed_page: 102, section: Kazakabezas}}]
+    source: {manual: lustria, printed_page: 102, section: Kazakabezas}
+  - id: savage-goblin-bruiser
+    name: Aporreador
+    type: henchman
+    cost: 25
+    experience: 0
+    characteristics: {M: 10, WS: 3, BS: 3, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 6}
+    equipment_lists: [savage-goblin-bruiser-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: []
+    rules: [{id: savage-goblin-animosity, name: Animosidad, effect: Está sujeto a Animosidad., source: {manual: lustria, printed_page: 103, section: Aporreadores}}]
+    source: {manual: lustria, printed_page: 103, section: Aporreadores}
+  - id: savage-goblin-zomblin
+    name: Zomblin
+    type: henchman
+    cost: 0
+    experience: 0
+    characteristics: {M: 10, WS: 2, BS: 0, S: 3, T: 3, W: 1, I: 1, A: 1, Ld: 5}
+    equipment_lists: []
+    fixed_equipment: []
+    equipment_restrictions: [No puede utilizar equipo, Pierde el equipo que tuviera antes de transformarse]
+    skill_access: []
+    rules:
+      - {id: undead-no-run, name: No pueden correr, effect: No puede correr, pero sí cargar normalmente., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+      - {id: causes-fear, name: Causan miedo, effect: Causa miedo., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+      - {id: immune-psychology, name: Inmunes a psicología, effect: Es inmune a psicología y no abandona el combate., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+      - {id: immune-poison, name: Inmunes a los venenos, effect: Es inmune a venenos., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+      - {id: insensible-pain, name: Insensibles al dolor, effect: Considera Aturdido como Derribado., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+      - {id: brainless, name: Sin cerebro, effect: No gana experiencia., source: {manual: lustria, printed_page: 103, section: Zomblins}}
+    source: {manual: lustria, printed_page: 103, section: Zomblins}
+  - id: savage-goblin-zomblintua
+    name: Zomblintua
+    type: henchman
+    cost: 195
+    experience: 0
+    characteristics: {M: 12, WS: 3, BS: 0, S: 4, T: 5, W: 3, I: 1, A: 2, Ld: 6}
+    equipment_lists: []
+    fixed_equipment: []
+    equipment_restrictions: [No puede utilizar equipo, Requiere sacrificar tres Zomblins además de pagar el coste]
+    skill_access: []
+    rules:
+      - {id: savage-goblin-zomblintua-construction, name: Construcción, effect: Requiere que la banda tenga al menos tres Zomblins y sacrificarlos además de pagar 195 coronas., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: undead-no-run, name: No pueden correr, effect: No puede correr, pero sí cargar normalmente., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: causes-fear, name: Causan miedo, effect: Causa miedo., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: immune-psychology, name: Inmunes a psicología, effect: Es inmune a psicología y no abandona el combate., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: immune-poison, name: Inmunes a los venenos, effect: Es inmune a venenos., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: insensible-pain, name: Insensible al dolor, effect: Considera Aturdido como Derribado., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: brainless, name: Sin cerebro, effect: No gana experiencia., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: large-target, name: Objetivo grande, effect: Puede recibir disparos aunque no sea el objetivo más cercano y se obtiene +1 para impactarle con proyectiles., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+      - {id: savage-goblin-zomblintua-regeneration, name: Regeneración, effect: Cada herida se ignora con 5+ en 1D6. No regenera fuego ni magia ígnea y las heridas de fuego se duplican. Tira tras la batalla para ignorar efectos de heridas graves salvo las de fuego., source: {manual: lustria, printed_page: 104, section: Zomblintua}}
+    source: {manual: lustria, printed_page: 104, section: Zomblintua}
+band_rules:
+  - {id: savage-goblin-jungle-native, name: Nativos de la jungla, effect: No sufren penalizadores al moverse por bosques ni vegetación., source: {manual: lustria, printed_page: 98, section: Reglas Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-unpleasant-company, name: Compañía desagradable, effect: Solo pueden contratar Luchador de Pozo, Guardaespaldas Ogro y Hechicero como Espadas de Alquiler, y estos deben ser pieles verdes si se indica lo contrario., source: {manual: lustria, printed_page: 98, section: Reglas Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-camouflage, name: Camuflaje, effect: Un Goblin sin armadura, salvo cuero endurecido, no puede ser detectado hasta que el atacante supere Iniciativa., source: {manual: lustria, printed_page: 98, section: Reglas Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-fear-elves, name: Miedo a los Orejas Picudas, effect: Tienen miedo de los Elfos., source: {manual: lustria, printed_page: 98, section: Reglas Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-animosity, name: Animosidad, effect: "Al inicio del turno tira 1D6 por cada Goblin que no esté trabado; con 1 se ofende con el aliado más cercano. Después tira 1D6: con 1 carga o dispara al aliado si puede y si no no actúa; con 2-5 no hace nada salvo defenderse; con 6 mueve inmediatamente hacia el enemigo visible más cercano y debe cargar si alcanza distancia.", source: {manual: lustria, printed_page: 98, section: Animosidad}}
+  - {id: sacrifice-dagger, name: Daga de Zakrificioz, effect: Cuesta 10 coronas y concede +1 a la salvación enemiga. Antes de la batalla el Médiko puede sacrificar un miembro o cautivo; ambos tiran Iniciativa y, si gana el Médiko, obtiene +1 a lanzar hechizos y +1 Liderazgo. Los Zomblins no son sacrificios válidos y el sacrificado no puede transformarse., source: {manual: lustria, printed_page: 99, section: Daga de Zakrificioz}}
+  - {id: spider-chitin-armour, name: Armadura Kitinoza, effect: Cuesta 80 coronas y tiene rareza 11. Su salvación es 6 en 1D6, concede salvación especial de 6 contra magia, duplica heridas por fuego y permite escalar como con la habilidad correspondiente., source: {manual: lustria, printed_page: 99, section: Armadura Kitinoza}, conditions: [La lista de equipo de la página 97 indica 70 coronas]}
+  - {id: shrunken-head, name: Cabeza Reduzidaz, effect: Cuesta 25 coronas y tiene rareza 6. Arma arrojadiza de 15 cm y Fuerza 2 sin penalización por alcance o movimiento; no se usa en cuerpo a cuerpo. El impactado hace inmediatamente Pánico, salvo inmunes a psicología, Grandes o Bestias Enormes., source: {manual: lustria, printed_page: 99, section: Cabeza Reduzidaz}}
+  - {id: feather-headdress, name: Tokado de Plumaz, effect: Cuesta 20 coronas y tiene rareza 6. El Jefe puede repetir Liderazgo y una vez por batalla un chequeo de retirada. Si muere, el nuevo Jefe recupera automáticamente el tocado y debe llevarlo., source: {manual: lustria, printed_page: 99, section: Tokado de Plumaz}}
+  - {id: savage-goblin-skill-infiltration, name: Infiltración, effect: No pueden adquirirla Dientez Rojoz ni Médiko Brujo. Despliega tras el enemigo, fuera de su línea de visión y a más de 30 cm de cualquier enemigo., source: {manual: lustria, printed_page: 105, section: Habilidades Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-skill-unpredictable, name: Impredezible, effect: Puede declarar impredecible uno de sus ataques y ese ataque no puede ser parado., source: {manual: lustria, printed_page: 105, section: Habilidades Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-skill-zomblin-medicine, name: Medizina Zomblin, effect: Solo Médiko Brujo. En futuras subidas puede elegir un hechizo de magia nigromántica en vez de una habilidad; Zomblins y Zomblintua cuentan como zombis para esos hechizos. Los efectos concretos de magia quedan fuera del alcance actual., source: {manual: lustria, printed_page: 105, section: Habilidades Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-skill-spider-infested, name: Infestado de Arañaz, effect: Cada vez que un enemigo falle para impactarle o él pare, el enemigo recibe -1 Iniciativa acumulativo hasta dejar de estar trabado o quedar fuera de combate., source: {manual: lustria, printed_page: 105, section: Habilidades Especiales de los Goblins Zalvajes}}
+  - {id: savage-goblin-skill-three-weapons, name: Maezto en Armaz ke ze Tiran, effect: Solo Montarazes. Puede equiparse con hasta cinco armas a distancia en vez de dos., source: {manual: lustria, printed_page: 105, section: Habilidades Especiales de los Goblins Zalvajes}}

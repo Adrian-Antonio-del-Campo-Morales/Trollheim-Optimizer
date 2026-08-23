@@ -1,0 +1,105 @@
+format_version: 1
+currency: coronas_de_oro
+notes:
+  - Los precios variables se conservan como fórmula de dados.
+  - El coste de lista de banda puede ser distinto del coste comercial.
+  - Las restricciones y rarezas forman parte del registro, no son notas opcionales.
+
+general:
+  source: {manual: caos-en-las-calles, printed_page: 237-238, section: Lista de Precios}
+  melee_weapons:
+    - {id: dagger, name: Daga, cost: '2', availability: común}
+    - {id: club, name: Garrote, cost: '3', availability: común}
+    - {id: mace, name: Maza, cost: '3', availability: común}
+    - {id: hammer, name: Martillo, cost: '3', availability: común}
+    - {id: staff, name: Báculo, cost: '3', availability: común}
+    - {id: axe, name: Hacha, cost: '5', availability: común}
+    - {id: spear, name: Lanza, cost: '10', availability: común}
+    - {id: halberd, name: Alabarda, cost: '10', availability: común}
+    - {id: sword, name: Espada, cost: '10', availability: común}
+    - {id: travelling_staff, name: Cayado de viaje, cost: '10', availability: común, restriction: Sociedad Arcana}
+    - {id: chained_squig, name: Garrapato encadenado, cost: '10', availability: común, restriction: Orcos}
+    - {id: squig_prod, name: Pinchagarrapatos, cost: '10', availability: común, restriction: Goblins}
+    - {id: kusara_kama, name: Kusara Kama, cost: '10', availability: común, restriction: Portadores de Muerte}
+    - {id: great_weapon, name: Arma a dos manos, cost: '15', availability: común}
+    - {id: flail, name: Mayal, cost: '15', availability: común}
+    - {id: morning_star, name: Mangual, cost: '15', availability: común}
+    - {id: sigmarite_hammer, name: Martillo sigmarita, cost: '15', availability: común, restriction: Protectorado o Hermanas de Sigmar}
+    - {id: yari, name: Yari, cost: '15', availability: común, restriction: Cazador Silencioso}
+    - {id: dwarf_axe, name: Hacha enana, cost: '15', availability: raro_8, restriction: Enanos}
+    - {id: rapier, name: Estoque, cost: '15', availability: raro_5}
+    - {id: choppa, name: Rebanadora, cost: '15', availability: común, restriction: Orcos}
+    - {id: ball_and_chain, name: Bola con cadena, cost: '15', availability: común, restriction: Goblins}
+    - {id: spiked_gauntlet, name: Guantelete con pincho, cost: '15', availability: raro_7, restriction: Luchadores de Pozo}
+    - {id: trident, name: Tridente, cost: '15', availability: raro_7, restriction: Luchadores de Pozo}
+    - {id: death_knife, name: Cuchillo de Muerte, cost: '15', availability: raro_7, restriction: Cazador Silencioso}
+    - {id: brass_knuckles, name: Puño de bronce, cost: '20', availability: raro_6}
+    - {id: war_maul, name: Mazo de guerra, cost: '20', availability: raro_8}
+    - {id: double_blade, name: Espada de doble hoja, cost: '25', availability: raro_9}
+    - {id: sword_breaker, name: Rompeespadas, cost: '30', availability: raro_8}
+    - {id: witch_blade, name: Espada bruja, cost: '30', availability: raro_9, restriction: Hoja Sombría}
+    - {id: fighting_claws, name: Garras de combate, cost: '35', availability: común, restriction: Skaven}
+    - {id: brazier_staff, name: Vara brasero, cost: '35', availability: raro_7, restriction: Fieles de Sigmar}
+    - {id: cavalry_lance, name: Lanza de caballería, cost: '40', availability: raro_8}
+    - {id: weeping_blades, name: Espadas supurantes, cost: '50', availability: raro_9, restriction: Skaven}
+    - {id: ithilmar_weapon, name: Arma de ithilmar, cost: '3 x coste base', availability: raro_8}
+    - {id: gromril_weapon, name: Arma de gromril, cost: '4 x coste base', availability: raro_11}
+  armour:
+    - {id: hardened_leather, name: Cuero endurecido, cost: '5', availability: común}
+    - {id: buckler, name: Rodela, cost: '5', availability: común}
+    - {id: shield, name: Escudo, cost: '5', availability: común}
+    - {id: helmet, name: Casco, cost: '10', availability: común}
+    - {id: wizard_robe, name: Túnica de mago, cost: '10', availability: raro_6}
+    - {id: wolf_cloak, name: Capa de lobo, cost: '10', availability: especial, restriction: Mercenarios de Middenheim}
+    - {id: eshin_assassin_robes, name: Ropajes de asesino Eshin, cost: '15', availability: común, restriction: Cazador Silencioso}
+    - {id: light_armour, name: Armadura ligera, cost: '20', availability: común}
+    - {id: shield_of_sigmar, name: Escudo de Sigmar, cost: '20', availability: raro_9, restriction: Protectorado de Sigmar}
+    - {id: pavise, name: Pavés, cost: '25', availability: raro_8}
+    - {id: barding, name: Barda, cost: '30', availability: raro_11, restriction: Caballo de guerra}
+    - {id: heavy_armour, name: Armadura pesada, cost: '50', availability: común}
+    - {id: ithilmar_armour, name: Armadura de ithilmar, cost: '90', availability: raro_10}
+    - {id: plate_armour, name: Armadura de placas, cost: '120', availability: raro_9}
+    - {id: gromril_armour, name: Armadura de gromril, cost: '150', availability: raro_12}
+  drugs_and_poisons:
+    - {id: garlic, name: Ajo, cost: '1', availability: común, restriction: No disponible para No Muertos}
+    - {id: black_lotus, name: Loto negro, cost: '10+1D6', availability: raro_9, variants: {goblins_salvajes: raro_7, skaven: raro_7, elfos_oscuros: raro_7, hombres_lagarto: común, pigmeos: común}}
+    - {id: tears_of_shallaya, name: Lágrimas de Shallaya, cost: '10+2D6', availability: raro_12, restriction: No disponible para No Muertos ni Poseídos}
+    - {id: healing_herbs, name: Hierbas curativas, cost: '20+2D6', availability: raro_8}
+    - {id: madcap_mushrooms, name: Hongos Pirakabezas, cost: '25', availability: común, restriction: Goblins}
+    - {id: mandrake_root, name: Raíz de mandrágora, cost: '25+1D6', availability: raro_9}
+    - {id: dark_venom, name: Veneno negro, cost: '30+2D6', availability: raro_8, variants: {elfos_oscuros: raro_6, goblins_salvajes: raro_6, hombres_lagarto: común, pigmeos: común}}
+    - {id: mad_mushrooms, name: Hongos Sombrero Loco, cost: '30+3D6', availability: raro_9, variants: {orcos: común, goblins: común}}
+    - {id: crimson_shade, name: Sombra carmesí, cost: '35+1D6', availability: raro_8}
+    - {id: bugmans_ale, name: Cerveza Bugman, cost: '50+3D6', availability: raro_11}
+    - {id: elven_wine, name: Vino élfico, cost: '50+3D6', availability: raro_10, restriction: Altos Elfos e Hijos de Nagarythe}
+
+lustria:
+  source: {manual: lustria, printed_page: 167-170, section: Lista de Precios de Lustria}
+  melee_overrides_and_additions:
+    - {id: stone_axe, name: Hacha de piedra, cost: '3', availability: común}
+    - {id: long_hook, name: Garfio largo, cost: '8', availability: común, restriction: Piratas}
+    - {id: scourge, name: Azote, cost: '8', availability: común, restriction: Héroes Piratas y Norses}
+    - {id: sacrificial_dagger, name: Daga de Zakrificioz, cost: '10', availability: común, restriction: Médiko Brujo goblin salvaje}
+    - {id: beastmaster_whip, name: Látigo del Señor de las Bestias, cost: '10', availability: común, restriction: Señor de las Bestias elfo oscuro}
+    - {id: pike, name: Pica, cost: '12', availability: raro_7, variants: {mercenarios_humanos: común}}
+    - {id: cutlass, name: Alfanje, cost: '15', availability: común}
+    - {id: plague_dagger, name: Daga de ponzoña, cost: '15', availability: raro_8, restriction: Clan Pestilens}
+    - {id: wizard_staff, name: Bastón de mago, cost: '20', availability: raro_10, restriction: Maestro del Conocimiento alto elfo}
+    - {id: elven_greatsword, name: Espada élfica a dos manos, cost: '25', availability: raro_8, restriction: Elfos}
+    - {id: ancestral_claw, name: Garra de los Ancestrales, cost: '30', availability: raro_10, restriction: Heroínas amazonas}
+    - {id: censer, name: Incensario, cost: '40', availability: raro_9, restriction: Clan Pestilens}
+    - {id: draich, name: Draich, cost: '45', availability: raro_11, restriction: Héroes elfos oscuros}
+    - {id: dark_steel_weapon, name: Arma de acero oscuro, cost: '3 x coste base', availability: raro_10, variants: {elfos_oscuros: raro_9}}
+    - {id: obsidian_weapon, name: Arma de obsidiana, cost: '5 x coste base', availability: raro_11, variants: {enanos_del_caos: raro_10}}
+  armour_overrides_and_additions:
+    - {id: sea_dragon_cloak, name: Capa de dragón marino, cost: '50+2D6', availability: raro_11, restriction: Héroes y Corsarios elfos oscuros}
+    - {id: barding, name: Barda, cost: '50', availability: raro_11}
+    - {id: chitin_armour, name: Armadura kitinoza, cost: '80', availability: raro_11, restriction: Goblins salvajes}
+  poisons:
+    - {id: reptile_venom, name: Veneno de reptil, cost: '5', availability: raro_6, variants: {hombres_lagarto: común, pigmeos: común}}
+    - {id: aconite, name: Acónito, cost: '15+2D6', availability: raro_8, variants: {pigmeos: común}}
+    - {id: nightshade, name: Sombra nocturna, cost: '15+1D6', availability: raro_7, variants: {hombres_lagarto: raro_6, goblins_salvajes: raro_6, pigmeos: común}}
+    - {id: devils_toxin, name: Toxina del diablo, cost: '15+2D6', availability: raro_8, variants: {goblins_salvajes: raro_7, skaven: raro_7, pigmeos: común}}
+    - {id: spider_spittle, name: Saliva de araña, cost: '25+1D6', availability: raro_9, variants: {goblins_salvajes: raro_7, pigmeos: común}}
+    - {id: bloodroot, name: Raíz sangrienta, cost: '30+1D6', availability: raro_10, variants: {pigmeos: común}}
+    - {id: manbane, name: Matahombres, cost: '30+2D6', availability: raro_10, variants: {elfos_oscuros: raro_9, skaven: raro_9, goblins_salvajes: raro_9, hombres_lagarto: raro_9, pigmeos: común}}

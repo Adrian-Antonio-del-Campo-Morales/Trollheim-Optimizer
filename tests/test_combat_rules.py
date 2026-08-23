@@ -3,17 +3,13 @@ import numpy as np
 from trollheim_simulator.engine import (
     STATE_KNOCKED_DOWN,
     STATE_OUT,
-    STATE_PARALYZED,
     STATE_STANDING,
     STATE_STUNNED,
-    _apply_damage,
-    _build_matchups,
     _can_parry,
-    _injury_state_from_roll,
     _make_fighter,
-    _recover_fighter,
-    _resolve_attack_phase,
-    _simulate_batch_precomputed,
+    _simulate_batch,
+    _simulate_homogeneous_batch,
+    _vector_injury,
 )
 from trollheim_simulator.rules import WEAPON_MACE, WEAPON_SWORD
 
@@ -36,25 +32,19 @@ def fighter(**changes):
     return _make_fighter(base | changes)
 
 
-def test_recovery_sequence():
-    assert _recover_fighter(STATE_STUNNED) == (STATE_KNOCKED_DOWN, False)
-    assert _recover_fighter(STATE_KNOCKED_DOWN) == (STATE_STANDING, True)
-    assert _recover_fighter(STATE_STANDING) == (STATE_STANDING, False)
+class FixedRolls:
+    def __init__(self, *rolls):
+        self.rolls = iter(rolls)
+
+    def integers(self, _low, _high, size):
+        return np.full(size, next(self.rolls), dtype=np.int8)
 
 
-def test_paralysis_recovery_uses_resistance(monkeypatch):
-    monkeypatch.setattr("trollheim_simulator.engine._nb_roll_d6", lambda: 4)
-    assert _recover_fighter(STATE_PARALYZED, 4) == (STATE_STANDING, False)
-    assert _recover_fighter(STATE_PARALYZED, 3) == (STATE_PARALYZED, False)
-
-
-def test_mace_injury_table():
-    assert _injury_state_from_roll(1, WEAPON_MACE) == STATE_KNOCKED_DOWN
-    assert _injury_state_from_roll(2, WEAPON_MACE) == STATE_STUNNED
-    assert _injury_state_from_roll(3, WEAPON_MACE) == STATE_STUNNED
-    assert _injury_state_from_roll(4, WEAPON_MACE) == STATE_STUNNED
-    assert _injury_state_from_roll(5, WEAPON_MACE) == STATE_OUT
-    assert _injury_state_from_roll(2, WEAPON_SWORD) == STATE_KNOCKED_DOWN
+def win_rate(attacker, defender, seed=123, simulations=20_000):
+    wins, resolved = _simulate_homogeneous_batch(
+        attacker, defender, simulations, np.random.default_rng(seed)
+    )
+    return wins / resolved
 
 
 def test_attacks_with_double_strength_cannot_be_parried():
@@ -63,98 +53,74 @@ def test_attacks_with_double_strength_cannot_be_parried():
     assert not _can_parry(7, 3)
 
 
-def test_amulet_is_spent_on_first_hit_and_works_roughly_half_the_time():
-    attacker = fighter(A=1)
-    defender = fighter(main_weapon="Maza", has_luck_amulet=True)
-    ignored = 0
-    for _ in range(2_000):
-        wounds, state, used = _resolve_attack_phase(
-            attacker, defender, 1, STATE_STANDING, False, 1,
-            np.array([2], dtype=np.int64), np.array([7], dtype=np.int64), 1,
-        )
-        assert used
-        ignored += wounds == 1 and state == STATE_STANDING
-    # Además del 50% del amuleto, algunos golpes no llegan a herir.
-    assert 1_350 < ignored < 1_650
-
-
-def test_stunned_fighter_is_taken_out_automatically():
-    attacker = fighter()
-    defender = fighter()
-    wounds, state, _ = _resolve_attack_phase(
-        attacker,
-        defender,
-        1,
-        STATE_STUNNED,
-        False,
-        6,
-        np.array([6], dtype=np.int64),
-        np.array([7], dtype=np.int64),
-        1,
+def test_vector_injury_table_distinguishes_maces_from_swords():
+    mace = _vector_injury(
+        FixedRolls(2), 1, WEAPON_MACE, False, False, False, False, 0
     )
-    assert wounds == 1
-    assert state == STATE_OUT
-
-
-def test_mace_stuns_more_often_than_a_sword():
-    # Una muestra grande verifica la regla por distribución.
-    mace_stunned = 0
-    sword_stunned = 0
-    for _ in range(2_000):
-        _, mace_state = _apply_damage(
-            1, STATE_STANDING, 1, WEAPON_MACE, False, False, False, 0
-        )
-        _, sword_state = _apply_damage(
-            1, STATE_STANDING, 1, WEAPON_SWORD, False, False, False, 0
-        )
-        mace_stunned += mace_state == STATE_STUNNED
-        sword_stunned += sword_state == STATE_STUNNED
-    assert mace_stunned > sword_stunned * 1.35
-
-
-def test_helmet_reduces_stuns_but_never_cancels_damage():
-    without_helmet_stuns = 0
-    with_helmet_stuns = 0
-    for _ in range(2_000):
-        wounds_plain, state_plain = _apply_damage(
-            1, STATE_STANDING, 1, WEAPON_SWORD, False, False, False, 0
-        )
-        wounds_helmet, state_helmet = _apply_damage(
-            1, STATE_STANDING, 1, WEAPON_SWORD, True, False, False, 0
-        )
-        assert wounds_plain == 0
-        assert wounds_helmet == 0
-        without_helmet_stuns += state_plain == STATE_STUNNED
-        with_helmet_stuns += state_helmet == STATE_STUNNED
-    assert with_helmet_stuns < without_helmet_stuns * 0.65
-
-
-def test_mandrake_turns_stunned_into_knocked_down(monkeypatch):
-    monkeypatch.setattr("trollheim_simulator.engine._nb_roll_d6", lambda: 3)
-    wounds, state = _apply_damage(
-        1, STATE_STANDING, 1, WEAPON_SWORD, False, False, False, 0, True
+    sword = _vector_injury(
+        FixedRolls(2), 1, WEAPON_SWORD, False, False, False, False, 0
     )
-    assert wounds == 0
-    assert state == STATE_KNOCKED_DOWN
+    out = _vector_injury(
+        FixedRolls(6), 1, WEAPON_SWORD, False, False, False, False, 0
+    )
+    assert mace.tolist() == [STATE_STUNNED]
+    assert sword.tolist() == [STATE_KNOCKED_DOWN]
+    assert out.tolist() == [STATE_OUT]
+
+
+def test_spring_up_does_not_cancel_a_helmet_knockdown():
+    states = _vector_injury(
+        FixedRolls(3, 4), 1, WEAPON_SWORD, True, True, False, False, 0
+    )
+    assert states.tolist() == [STATE_KNOCKED_DOWN]
+
+
+def test_mandrake_knockdown_can_be_cancelled_by_spring_up():
+    states = _vector_injury(
+        FixedRolls(3), 1, WEAPON_SWORD, False, True, True, False, 0
+    )
+    assert states.tolist() == [STATE_STANDING]
+
+
+def test_luck_amulet_reduces_the_attackers_win_rate():
+    attacker = fighter(main_weapon="Maza")
+    plain = fighter(HA=3, I=3, main_weapon="Maza")
+    protected = fighter(
+        HA=3, I=3, main_weapon="Maza", has_luck_amulet=True
+    )
+    assert win_rate(attacker, protected) < win_rate(attacker, plain)
+
+
+def test_sigmarite_hammer_is_better_against_unholy_targets():
+    attacker = fighter(main_weapon="Martillo Sigmarita")
+    normal = fighter(R=4, HA=3, I=3, main_weapon="Maza")
+    unholy = fighter(
+        R=4, HA=3, I=3, main_weapon="Maza", undead_or_possessed=True
+    )
+    assert win_rate(attacker, unholy) > win_rate(attacker, normal) + 0.04
+
+
+def test_chitin_armour_is_vulnerable_to_the_brazier_staff():
+    attacker = fighter(main_weapon="Vara Brasero")
+    light = fighter(H=2, HA=3, I=3, main_weapon="Maza", armor="Armadura Ligera")
+    chitin = fighter(
+        H=2, HA=3, I=3, main_weapon="Maza", armor="Armadura Kitinoza"
+    )
+    assert win_rate(attacker, chitin) > win_rate(attacker, light) + 0.03
+
+
+def test_spider_spit_improves_the_poisoned_weapon():
+    plain = fighter(A=2, main_weapon="Espada")
+    poisoned = fighter(A=2, main_weapon="Espada", main_poison="Saliva de Araña")
+    defender = fighter(HA=3, I=3, main_weapon="Maza")
+    assert win_rate(poisoned, defender) > win_rate(plain, defender) + 0.02
 
 
 def test_unwinnable_duel_is_excluded_from_results():
     candidate = fighter(HA=1, F=1, R=10, I=1, main_weapon="Daga")
     enemies = np.stack([candidate.copy()])
-    matchup = _build_matchups(candidate, enemies)
-    wins, resolved = _simulate_batch_precomputed(
-        candidate,
-        enemies,
-        np.zeros(20, dtype=np.int64),
-        matchup[0],
-        matchup[1],
-        matchup[2],
-        matchup[3],
-        matchup[4],
-        matchup[5],
-        matchup[6],
-        20,
-        123,
+    wins, resolved = _simulate_batch(
+        candidate, enemies, np.zeros(20, dtype=np.int64), 20, 123
     )
     assert wins == 0
     assert resolved == 0

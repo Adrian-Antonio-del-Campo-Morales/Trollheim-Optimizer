@@ -8,12 +8,12 @@ __pycache__/
 build/
 dist/
 *.spec
+*.pyd
+src/trollheim_simulator/_combat_fast.c
 Trollheim_startup_error.txt
+outputs/
 
-# Los manuales y sus volcados completos son material de consulta local.
+# Los manuales completos y recortados son material de consulta local.
 # No los publiques por accidente: además de pesar un huevo, no son nuestros.
-sources/*.pdf
-sources/text/caos-en-las-calles.md
-sources/text/khemri.md
-sources/text/lustria.md
-sources/text/trollheim.md
+sources/full/
+sources/short/

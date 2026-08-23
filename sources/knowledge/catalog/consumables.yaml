@@ -1,0 +1,145 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "consumable-hongos-sombrero-loco",
+      "kind": "consumable",
+      "name": "Hongos Sombrero Loco",
+      "category": "Preparativos",
+      "rule_summary": "Furia Asesina: duplica el atributo A, pero no el ataque adicional por combatir con dos armas. El efecto termina al quedar Derribado o Aturdido.",
+      "source": "trollheim.pdf, pp. 40 y 52",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-hongos-pirakabezas",
+      "kind": "consumable",
+      "name": "Hongos Pirakabezas",
+      "category": "Preparativos",
+      "rule_summary": "El mismo efecto que los Hongos Sombrero Loco; también permite usar la Bola con Kadena.",
+      "source": "caos-en-las-calles.pdf, p. 129",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-sombra-carmesi",
+      "kind": "consumable",
+      "name": "Sombra Carmesí",
+      "category": "Preparativos",
+      "rule_summary": "+1 F y +1D3 I durante toda la batalla.",
+      "source": "trollheim.pdf, p. 52",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-raiz-de-mandragora",
+      "kind": "consumable",
+      "name": "Raíz de Mandrágora",
+      "category": "Preparativos",
+      "rule_summary": "+1 R; los resultados de Aturdido pasan a Derribado.",
+      "source": "trollheim.pdf, p. 52",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-lagrimas-de-shallaya",
+      "kind": "consumable",
+      "name": "Lágrimas de Shallaya",
+      "category": "Preparativos",
+      "rule_summary": "Inmunidad a todos los venenos durante la batalla.",
+      "source": "trollheim.pdf, p. 55",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-loto-negro",
+      "kind": "consumable",
+      "name": "Loto Negro",
+      "category": "Venenos",
+      "rule_summary": "Un 6 natural para impactar hiere automáticamente; una tirada posterior decide si el impacto es crítico.",
+      "source": "trollheim.pdf, p. 52",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-veneno-negro",
+      "kind": "consumable",
+      "name": "Veneno Negro",
+      "category": "Venenos",
+      "rule_summary": "+1 F al herir y al calcular la penetración de armadura.",
+      "source": "trollheim.pdf, p. 52",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-matahombres",
+      "kind": "consumable",
+      "name": "Matahombres",
+      "category": "Venenos",
+      "rule_summary": "+1 a la tirada para herir; un 1 natural sigue fallando.",
+      "source": "lustria.pdf, p. 26",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-saliva-de-arana",
+      "kind": "consumable",
+      "name": "Saliva de Araña",
+      "category": "Venenos",
+      "rule_summary": "Al impactar, el rival debe superar un chequeo de R o queda paralizado hasta superar otro en recuperación. Mientras tanto no lucha y recibe impactos automáticos.",
+      "source": "lustria.pdf, p. 26",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-aconito",
+      "kind": "consumable",
+      "name": "Acónito",
+      "category": "Venenos",
+      "rule_summary": "Produce críticos con 5-6 si el ataque no necesita un 6 natural para herir.",
+      "source": "lustria.pdf, p. 26",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-sombra-nocturna",
+      "kind": "consumable",
+      "name": "Sombra Nocturna",
+      "category": "Venenos",
+      "rule_summary": "Cada herida no salvada reduce la I del rival en 1 durante el resto del combate, hasta I1.",
+      "source": "lustria.pdf, p. 26",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-raiz-sangrienta",
+      "kind": "consumable",
+      "name": "Raíz Sangrienta",
+      "category": "Venenos",
+      "rule_summary": "Duplica las heridas causadas.",
+      "source": "lustria.pdf, p. 27",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-toxina-del-diablo",
+      "kind": "consumable",
+      "name": "Toxina del Diablo",
+      "category": "Venenos",
+      "rule_summary": "Repite las tiradas para herir fallidas; la repetición no puede causar crítico.",
+      "source": "lustria.pdf, p. 27",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "consumable-veneno-de-reptil",
+      "kind": "consumable",
+      "name": "Veneno de Reptil",
+      "category": "Venenos",
+      "rule_summary": "+1 F al herir sin aumentar la penetración de armadura.",
+      "source": "lustria.pdf, p. 27",
+      "transcription": "summary",
+      "implemented": null
+    }
+  ]
+}

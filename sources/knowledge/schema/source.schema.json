@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "source.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manual", "printed_page", "section"],
+  "properties": {
+    "manual": {"enum": ["trollheim", "caos-en-las-calles", "khemri", "lustria"]},
+    "printed_page": {"type": ["integer", "string"]},
+    "section": {"type": "string", "minLength": 1},
+    "note": {"type": "string"}
+  }
+}

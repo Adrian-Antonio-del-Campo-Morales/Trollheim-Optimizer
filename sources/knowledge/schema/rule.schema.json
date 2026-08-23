@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rule.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "effect", "source"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "name": {"type": "string", "minLength": 1},
+    "effect": {"type": "string", "minLength": 1},
+    "conditions": {"type": "array", "items": {"type": "string"}},
+    "exceptions": {"type": "array", "items": {"type": "string"}},
+    "source": {"$ref": "source.schema.json"}
+  }
+}

@@ -1,0 +1,285 @@
+{
+  "format_version": 1,
+  "records": [
+    {
+      "id": "skill-combatiente-experto",
+      "kind": "skill",
+      "name": "Combatiente Experto",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "+1 a las tiradas para herir en cuerpo a cuerpo.",
+      "source": "trollheim.pdf, p. 122",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-a-fondo",
+      "kind": "skill",
+      "name": "A Fondo",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "+1 a la tirada de efecto del impacto crítico.",
+      "source": "trollheim.pdf, p. 122",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-experto-en-esgrima",
+      "kind": "skill",
+      "name": "Experto en Esgrima",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Repite fallos para impactar al cargar con espadas normales, nunca con espadas a dos manos ni otras armas. La modificación de Khemri permite escoger cimitarra en lugar de espada y adquirir la habilidad dos veces para cubrir ambas armas.",
+      "source": "trollheim.pdf, p. 122 y Modificaciones del Reglamento; khemri.pdf, p. 94",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-echarse-a-un-lado",
+      "kind": "skill",
+      "name": "Echarse a un Lado",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Salvación especial 5+ tras la armadura contra heridas cuerpo a cuerpo.",
+      "source": "trollheim.pdf, p. 122",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-golpe-poderoso",
+      "kind": "skill",
+      "name": "Golpe Poderoso",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "+1 Fuerza en cuerpo a cuerpo.",
+      "source": "trollheim.pdf, p. 123",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-curtido",
+      "kind": "skill",
+      "name": "Curtido",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Resta 1 a la Fuerza de impactos cuerpo a cuerpo recibidos, sin alterar su penetración original.",
+      "source": "trollheim.pdf, p. 123",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-fortachon",
+      "kind": "skill",
+      "name": "Fortachón",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Las armas a dos manos dejan de atacar últimas.",
+      "source": "trollheim.pdf, p. 123",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-carga-imparable",
+      "kind": "skill",
+      "name": "Carga Imparable",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "+1 HA al cargar.",
+      "source": "trollheim.pdf, p. 123",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-reflejos-felinos",
+      "kind": "skill",
+      "name": "Reflejos Felinos",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Al recibir carga, ataca primero y desempata por Iniciativa.",
+      "source": "trollheim.pdf, pp. 123 y 179",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-en-pie-de-un-salto",
+      "kind": "skill",
+      "name": "En Pie de un Salto",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Ignora Derribado salvo las excepciones indicadas en las modificaciones finales.",
+      "source": "trollheim.pdf, pp. 123 y 179",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-maestro-del-hacha",
+      "kind": "skill",
+      "name": "Maestro del Hacha",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Permite parar con hachas normales.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-experto-en-hachas",
+      "kind": "skill",
+      "name": "Experto en Hachas",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Repite fallos para impactar con hachas al cargar.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-golpe-con-el-escudo",
+      "kind": "skill",
+      "name": "Golpe con el Escudo",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Con escudo obtiene un ataque adicional en cuerpo a cuerpo. El enemigo mejora su salvación por armadura en 1; si no tenía salvación, obtiene una de 6+.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-barrido",
+      "kind": "skill",
+      "name": "Barrido",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Con arma a dos manos cambia todos los ataques por un impacto automático si el rival falla un chequeo de I.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-incansable",
+      "kind": "skill",
+      "name": "Incansable",
+      "category": "Habilidades generales de efecto directo",
+      "rule_summary": "Mantiene en todas las fases de combate el modificador de Fuerza de las armas con la regla Pesada, como mayales, manguales y rebanadoras.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-desarmar",
+      "kind": "skill",
+      "name": "Desarmar",
+      "category": "Habilidades que sustituyen o condicionan ataques",
+      "rule_summary": "Renuncia a sus ataques para inutilizar un arma enemiga hasta que pueda recuperarse.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-estocada-mortal",
+      "kind": "skill",
+      "name": "Estocada Mortal",
+      "category": "Habilidades que sustituyen o condicionan ataques",
+      "rule_summary": "Sustituye todos los ataques por uno con +2 F que ataca último.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-pugilista",
+      "kind": "skill",
+      "name": "Pugilista",
+      "category": "Habilidades que sustituyen o condicionan ataques",
+      "rule_summary": "Mejora el combate sin armas y concede un ataque adicional.",
+      "source": "caos-en-las-calles.pdf, p. 189",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-fintar",
+      "kind": "skill",
+      "name": "Fintar",
+      "category": "Habilidades que sustituyen o condicionan ataques",
+      "rule_summary": "Cuando es cargado puede declarar una finta, como máximo una por turno. Ambos tiran 1D6 y suman Iniciativa; un 1 natural siempre falla. Si gana el defensor, desplaza al atacante hasta el final de su carga y se mueve 5 cm en cualquier dirección sin terminar en contacto con otra miniatura.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-luchador-de-pozo",
+      "kind": "skill",
+      "name": "Luchador de Pozo",
+      "category": "Habilidades situacionales o específicas",
+      "rule_summary": "+1 HA y +1 A dentro de edificios o ruinas.",
+      "source": "trollheim.pdf, p. 123",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-maestro-en-combate",
+      "kind": "skill",
+      "name": "Maestro en Combate",
+      "category": "Habilidades situacionales o específicas",
+      "rule_summary": "Obtiene bonificaciones al combatir contra varios enemigos.",
+      "source": "trollheim.pdf, p. 122",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-agilidad-elfica",
+      "kind": "skill",
+      "name": "Agilidad élfica",
+      "category": "Habilidades situacionales o específicas",
+      "rule_summary": "Salvación especial 6+ contra ataques; mejora al combinarse con Echarse a un Lado.",
+      "source": "lustria.pdf, pp. 65 y 80",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-ignorar-el-dolor",
+      "kind": "skill",
+      "name": "Ignorar el Dolor",
+      "category": "Habilidades situacionales o específicas",
+      "rule_summary": "Trata Aturdido como Derribado.",
+      "source": "lustria.pdf, p. 80",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-tirador-de-clima-lluvioso",
+      "kind": "skill",
+      "name": "Tirador de Clima Lluvioso",
+      "category": "Habilidades de Disparo",
+      "rule_summary": "No sufre penalizadores por disparar mientras llueve. Si usa armas de pólvora puede dispararlas normalmente sin efectuar el chequeo de pólvora mojada.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-conductor-de-carros",
+      "kind": "skill",
+      "name": "Conductor de Carros",
+      "category": "Habilidades Académicas",
+      "rule_summary": "Permite conducir un carro con eficacia en combate. Un cochero que no tenga esta habilidad no puede cargar.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-conocimientos-elementales",
+      "kind": "skill",
+      "name": "Conocimientos Elementales",
+      "category": "Habilidades Académicas",
+      "rule_summary": "No puede ser adquirida por Cazadores de Brujas, Hermanas de Sigmar ni Sacerdotes Guerreros. Un guerrero con esta habilidad y un Tomo de los Elementos puede aprender magia elemental; solo puede aprender una lista elemental por tomo. Los hechizos concretos quedan fuera del alcance canónico actual.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-desactivar-trampas",
+      "kind": "skill",
+      "name": "Desactivar Trampas",
+      "category": "Habilidades Genéricas",
+      "rule_summary": "Permite atravesar libremente una zona de trampas sin detonarlas, aunque puede sufrir las activadas por otro. Para desactivar una trampa debe terminar en contacto e invertir el turno completo: una simple exige 6+ en 2D6 y una compleja 8+ en 2D6; un 6 permite repetir un dado. Si falla, supera Iniciativa o la trampa se activa. Puede adquirirse hasta cuatro veces y cada adquisición reduce la dificultad en 1.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    },
+    {
+      "id": "skill-rearmar-trampas",
+      "kind": "skill",
+      "name": "Rearmar Trampas",
+      "category": "Habilidades Genéricas",
+      "rule_summary": "Permite rearmar una trampa usada o desactivada conservando su mecanismo. Determina el tipo con 1D6: 1-4 simple y 5-6 compleja. En contacto al final del movimiento invierte el turno completo y supera 6+ en 1D6 para una simple o 8+ para una compleja; fallar solo impide rearmarla. Puede adquirirse hasta cuatro veces y cada adquisición reduce la dificultad en 1.",
+      "source": "khemri.pdf, p. 95",
+      "transcription": "summary",
+      "implemented": null
+    }
+  ]
+}

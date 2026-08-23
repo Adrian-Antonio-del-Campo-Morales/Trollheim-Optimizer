@@ -1,0 +1,171 @@
+id: khemri-guardianes-del-sepulcro
+name: Guardianes del Sepulcro
+source: {manual: khemri, printed_page: 40-47, section: Guardianes del Sepulcro}
+roster:
+  minimum_models: 3
+  maximum_models: 15
+  starting_gold: 500
+  members:
+    - {profile_id: tomb-lord, minimum: 1, maximum: 1}
+    - {profile_id: mortuary-priest, minimum: 0, maximum: 1}
+    - {profile_id: necrotect, minimum: 0, maximum: 1}
+    - {profile_id: mortuary-acolyte, minimum: 0, maximum: 3}
+    - {profile_id: skeleton-warrior, minimum: 0, maximum: null}
+    - {profile_id: tomb-guard, minimum: 0, maximum: 2}
+    - {profile_id: giant-scorpion, minimum: 0, maximum: 3}
+    - {profile_id: stone-golem, minimum: 0, maximum: 1}
+equipment_lists:
+  - id: tomb-undead-equipment
+    name: Equipo de los No Muertos
+    source: {manual: khemri, printed_page: 41, section: Lista de equipo de los No Muertos}
+    items:
+      - {item_id: bronze_dagger, cost: 2, notes: La primera es gratis}
+      - {item_id: mace, cost: 3}
+      - {item_id: bronze_axe, cost: 5}
+      - {item_id: bronze_sword, cost: 10}
+      - {item_id: halberd, cost: 10}
+      - {item_id: bronze_spear, cost: 10}
+      - {item_id: flail, cost: 15}
+      - {item_id: great_weapon, cost: 15}
+      - {item_id: morning_star, cost: 15}
+      - {item_id: bow, cost: 10}
+      - {item_id: asp_arrows, cost: 10, notes: Solo Señor Funerario}
+      - {item_id: nehekhara_javelin, cost: 10, notes: Solo Señor Funerario}
+      - {item_id: shield, cost: 5}
+      - {item_id: bronze_helmet, cost: 10}
+      - {item_id: bronze_breastplate, cost: 20, notes: Armadura ligera}
+      - {item_id: bone_chariot, cost: 200+10D6, notes: Una por banda; rareza 7}
+  - id: mortuary-priest-equipment
+    name: Equipo para Sacerdotes Funerarios
+    source: {manual: khemri, printed_page: 41, section: Lista de equipo para Sacerdotes Funerarios}
+    items:
+      - {item_id: bronze_dagger, cost: 2, notes: La primera es gratis}
+      - {item_id: mace, cost: 3}
+      - {item_id: staff, cost: 3}
+      - {item_id: bronze_sword, cost: 10}
+      - {item_id: flail, cost: 15}
+      - {item_id: serpent_staff, cost: 30, notes: Solo Sacerdote Funerario}
+profiles:
+  - id: tomb-lord
+    name: Señor Funerario
+    type: hero
+    cost: 90
+    experience: 20
+    characteristics: {M: 10, WS: 4, BS: 3, S: 4, T: 4, W: 2, I: 3, A: 1, Ld: 8}
+    equipment_lists: [tomb-undead-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: [combat, shooting, strength]
+    rules:
+      - {id: tomb-lord-leader, name: Jefe, effect: Los guerreros a 15 cm o menos pueden utilizar su Liderazgo., source: {manual: khemri, printed_page: 44, section: Señor Funerario}}
+      - {id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda., source: {manual: khemri, printed_page: 44, section: Señor Funerario}}
+      - {id: tomb-lord-flammable, name: Inflamable, effect: Las heridas de fuego causan el doble de heridas., source: {manual: khemri, printed_page: 43, section: Reglas especiales de los No Muertos}}
+    source: {manual: khemri, printed_page: 44, section: Señor Funerario}
+  - id: mortuary-priest
+    name: Sacerdote Funerario
+    type: hero
+    cost: 50
+    experience: 6
+    characteristics: {M: 10, WS: 2, BS: 2, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 8}
+    equipment_lists: [mortuary-priest-equipment]
+    fixed_equipment: []
+    equipment_restrictions: [No puede llevar armadura]
+    skill_access: [academic]
+    rules:
+      - {id: mortuary-priest-spellcaster, name: Hechicero, effect: Puede utilizar los pergaminos de los Sacerdotes Funerarios; sus efectos individuales quedan fuera del alcance canónico actual., source: {manual: khemri, printed_page: 44, section: Sacerdote Funerario}}
+      - {id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda., source: {manual: khemri, printed_page: 44, section: Sacerdote Funerario}}
+    source: {manual: khemri, printed_page: 44, section: Sacerdote Funerario}
+  - id: necrotect
+    name: Necrotecto
+    type: hero
+    cost: 70
+    experience: 12
+    characteristics: {M: 10, WS: 3, BS: 3, S: 3, T: 4, W: 1, I: 3, A: 1, Ld: 7}
+    equipment_lists: [tomb-undead-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: [combat, academic, strength]
+    rules:
+      - {id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda., source: {manual: khemri, printed_page: 45, section: Necrotecto}}
+      - {id: necrotect-hatred, name: Odio, effect: Puede repetir tiradas fallidas para impactar durante la primera ronda de cada combate., source: {manual: khemri, printed_page: 45, section: Necrotecto}}
+      - {id: necrotect-stone-forger, name: Forjador de Piedra, effect: Los Gólems de Piedra a 15 cm o menos obtienen regeneración de 6+., source: {manual: khemri, printed_page: 45, section: Necrotecto}}
+    source: {manual: khemri, printed_page: 45, section: Necrotecto}
+  - id: mortuary-acolyte
+    name: Acólito
+    type: hero
+    cost: 35
+    experience: 0
+    characteristics: {M: 10, WS: 2, BS: 2, S: 3, T: 3, W: 1, I: 3, A: 1, Ld: 7}
+    equipment_lists: [mortuary-priest-equipment]
+    fixed_equipment: []
+    equipment_restrictions: [No puede llevar armadura]
+    skill_access: [combat, academic]
+    rules: [{id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda., source: {manual: khemri, printed_page: 45, section: Acólitos}}]
+    source: {manual: khemri, printed_page: 45, section: Acólitos}
+  - id: skeleton-warrior
+    name: Guerrero Esqueleto
+    type: henchman
+    cost: 20
+    experience: 0
+    characteristics: {M: 10, WS: 2, BS: 2, S: 3, T: 3, W: 1, I: 2, A: 1, Ld: 5}
+    equipment_lists: [tomb-undead-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: []
+    rules: [{id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda y no gana experiencia., source: {manual: khemri, printed_page: 46, section: Guerreros Esqueleto}}]
+    source: {manual: khemri, printed_page: 46, section: Guerreros Esqueleto}
+  - id: tomb-guard
+    name: Guardia del Sepulcro
+    type: henchman
+    cost: 40
+    experience: 0
+    characteristics: {M: 10, WS: 3, BS: 2, S: 4, T: 3, W: 1, I: 3, A: 1, Ld: 5}
+    equipment_lists: [tomb-undead-equipment]
+    fixed_equipment: []
+    equipment_restrictions: []
+    skill_access: []
+    rules: [{id: undead, name: No Muerto, effect: Está sujeto a las reglas de No Muertos de la banda y no gana experiencia., source: {manual: khemri, printed_page: 46, section: Guardianes del Sepulcro}}]
+    source: {manual: khemri, printed_page: 46, section: Guardianes del Sepulcro}
+  - id: giant-scorpion
+    name: Escorpión Gigante
+    type: henchman
+    cost: 15
+    experience: 0
+    characteristics: {M: 12, WS: 2, BS: 0, S: 2, T: 2, W: 1, I: 4, A: 1, Ld: 4}
+    equipment_lists: []
+    fixed_equipment: [Aguijón]
+    equipment_restrictions: [No puede utilizar equipo]
+    skill_access: []
+    rules:
+      - {id: living, name: Viven, effect: Es un ser vivo y usa psicología normal, pero no necesita agua., source: {manual: khemri, printed_page: 46, section: Escorpiones de la tumba}}
+      - {id: animal, name: Animal, effect: No gana experiencia., source: {manual: khemri, printed_page: 46, section: Escorpiones de la tumba}}
+      - {id: scorpion-sting, name: Picadura de escorpión, effect: Sus ataques usan el efecto de Loto Negro., source: {manual: khemri, printed_page: 46, section: Escorpiones de la tumba}}
+    source: {manual: khemri, printed_page: 46, section: Escorpiones de la tumba}
+  - id: stone-golem
+    name: Gólem de Piedra
+    type: henchman
+    cost: 150
+    experience: 0
+    characteristics: {M: 8, WS: 3, BS: 0, S: 5, T: 4, W: 3, I: 1, A: 2, Ld: 5}
+    equipment_lists: []
+    fixed_equipment: []
+    equipment_restrictions: [No puede utilizar equipo, No sufre penalización por combatir desarmado]
+    skill_access: []
+    rules:
+      - {id: stone-golem-armour, name: Cuerpo de piedra, effect: Tiene salvación natural de 4+., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: causes-fear, name: Causa miedo, effect: Causa miedo., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: immune-psychology, name: Inmune a psicología, effect: Es inmune a psicología y nunca abandona el combate., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: immune-poison, name: Inmune a venenos, effect: Es inmune a venenos., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: brainless, name: Sin cerebro, effect: No gana experiencia., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: impossible-hide, name: Imposible de ocultar, effect: No puede ocultarse., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: large-target, name: Grande, effect: Puede recibir disparos aunque no sea el objetivo más cercano., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: no-water, name: No comen, effect: No necesita agua., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+      - {id: animated, name: Animado, effect: Es un ser animado, no un No Muerto., source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}}
+    source: {manual: khemri, printed_page: 47, section: Gólem de Piedra}
+band_rules:
+  - {id: tomb-undead-rules, name: Reglas de los No Muertos, effect: Causan miedo, son inmunes a psicología y venenos, consideran Aturdido como Derribado, no necesitan alimento ni agua y no pueden correr aunque sí cargar. Los secuaces con esta regla no ganan experiencia; Señor, Sacerdote y Acólitos sí pueden aprender o recordar habilidades., source: {manual: khemri, printed_page: 43, section: Reglas especiales de los No Muertos}}
+  - {id: tomb-at-home, name: En Casa, effect: En Khemri tira un dado adicional durante la exploración., source: {manual: khemri, printed_page: 43, section: Reglas especiales de los No Muertos}}
+  - {id: nehekhara-javelin, name: Jabalina Nehekhara, effect: Alcance 20 cm, Fuerza del usuario y +1 para impactar., source: {manual: khemri, printed_page: 42, section: Jabalina Nehekhara}}
+  - {id: asp-arrows, name: Flechas Áspid, effect: Conceden +1 para impactar., source: {manual: khemri, printed_page: 42, section: Flechas Áspid}}
+  - {id: serpent-staff, name: Báculo de Serpiente, effect: Arma a dos manos de Fuerza del usuario que permite Parada. El Sacerdote puede renunciar a todos sus ataques para efectuar uno que Ataca Primero con HA4 y F4., source: {manual: khemri, printed_page: 42, section: Báculo de Serpiente}}
+  - {id: bone-chariot, name: Carro de Hueso, effect: Cuesta 200+10D6 coronas, rareza 7 y solo puede haber uno. Concede salvación 5+, mueve 20 cm, no corre y dobla al cargar. Terreno difícil causa D3 impactos F4 o 2D3 F6 durante carga. Perder un corcel reduce Movimiento a la mitad; perder ambos lo inmoviliza. Al mover más de la mitad arrolla con una herida F4 y -2 a salvación a quien falle Iniciativa en su línea. Es objetivo grande y los disparos impactan con +1; al impactar se reparte en 1-2 corcel, 3-4 carro y 5-6 conductor., source: {manual: khemri, printed_page: 42, section: Carro de Hueso}}
