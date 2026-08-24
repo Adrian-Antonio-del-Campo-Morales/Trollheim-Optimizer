@@ -1,5 +1,10 @@
 # Historial de cambios
 
+## 6.2.0
+
+- Rediseñada la interfaz para ofrecer una experiencia visual más clara y cuidada.
+- Mejorada la disposición y el estilo de controles, paneles y resultados.
+
 ## 6.1.0
 
 - Añadidas las reglas de la casa configurables y su inclusión en los libros Excel.

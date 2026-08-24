@@ -1,3 +1,3 @@
 """Simulador de combates de Trollheim."""
 
-__version__ = "6.1.0"
+__version__ = "6.2.0"
