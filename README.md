@@ -11,11 +11,11 @@ El programa calcula estimaciones estadísticas. No sustituye al reglamento, al
 La versión portable es la opción más sencilla para Windows: consiste en un
 único archivo y no necesita instalación, Python ni compilación.
 
-[Descargar Trollheim Optimizer Portable 6.1.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v6.1.0/Trollheim-Optimizer-Portable-6.1.0.exe)
+[Descargar Trollheim Optimizer Portable 6.2.0](https://github.com/Adrian-Antonio-del-Campo-Morales/Trollheim-Optimizer/releases/download/v6.2.0/Trollheim-Optimizer-Portable-6.2.0.exe)
 
 Para utilizarla:
 
-1. Descarga `Trollheim-Optimizer-Portable-6.1.0.exe`.
+1. Descarga `Trollheim-Optimizer-Portable-6.2.0.exe`.
 2. Guarda el archivo donde quieras, por ejemplo en el escritorio o en una
    memoria USB.
 3. Haz doble clic sobre él para abrir el simulador.

@@ -49,6 +49,35 @@ from .workbooks import (
 )
 
 
+# Tk en Windows puede saturar el bucle de eventos con eventos <Configure>
+# al arrastrar la ventana principal. Esta pequeña pausa permite agrupar
+# geometrías pendientes sin afectar al redimensionado.
+WINDOW_MOVE_THROTTLE_MS = 12 if os.name == "nt" else 0
+
+# ---------------------------------------------------------------------
+# Tema visual
+# ---------------------------------------------------------------------
+
+COLORS = {
+    "bg": "#17191D",
+    "surface": "#202329",
+    "surface_alt": "#272B32",
+    "surface_hover": "#30353D",
+    "border": "#383D46",
+    "border_light": "#454B56",
+    "text": "#EEEDE8",
+    "text_muted": "#A6ABB3",
+    "text_disabled": "#686D75",
+    "accent": "#B68A4A",
+    "accent_hover": "#C99A55",
+    "accent_pressed": "#9F743B",
+    "danger": "#B94A48",
+    "danger_hover": "#CC5754",
+    "success": "#4E9668",
+    "warning": "#C69A4B",
+    "selection": "#343B45",
+}
+
 COMBAT_MODES = (
     ("Single", "Arma + mano libre"),
     ("Shield", "Arma y escudo"),
@@ -147,10 +176,13 @@ class ToolTip:
             tw,
             text=text,
             justify=tk.LEFT,
-            background="#ffffe0",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
             relief=tk.SOLID,
             borderwidth=1,
-            font=("tahoma", 8, "normal"),
+            highlightthickness=1,
+            highlightbackground=COLORS["border_light"],
+            font=("Segoe UI", 9, "normal"),
             wraplength=420,
         )
 
@@ -181,7 +213,7 @@ class TreeviewToolTip:
         self.last_target = None
         self.hover_item = None
         tree._tooltip_attached = True
-        tree.tag_configure("__hover_help__", background="#eaf3ff")
+        tree.tag_configure("__hover_help__", background=COLORS["selection"])
         tree.bind("<Motion>", self._motion, add="+")
         tree.bind("<Leave>", self._leave, add="+")
 
@@ -197,29 +229,69 @@ class TreeviewToolTip:
         )
         return columns[index] if 0 <= index < len(columns) else None
 
+
     def _motion(self, event):
         region = self.tree.identify_region(event.x, event.y)
         column = self._column(event.x)
-        item = self.tree.identify_row(event.y) if region in ("cell", "tree") else ""
+        item = (
+            self.tree.identify_row(event.y)
+            if region in ("cell", "tree")
+            else ""
+        )
+
         self._highlight(item)
+
         if region == "heading" and column:
-            title = self.tree.heading(column).get("text", column)
-            text = self.explanations.get(column, f"Pulsa para ordenar por «{title}».")
             target = ("heading", column)
-        elif item and column:
+
+            if target == self.last_target:
+                return
+
             title = self.tree.heading(column).get("text", column)
-            value = self.tree.set(item, column) or "Sin valor para esta configuración"
-            detail = self.explanations.get(column, "")
-            rule_detail = self.rule_resolver(value) if self.rule_resolver else ""
-            useful_detail = rule_detail or detail
-            text = f"{title}: {value}" + (f"\n{useful_detail}" if useful_detail else "")
+            text = self.explanations.get(
+                column,
+                f"Pulsa para ordenar por «{title}».",
+            )
+
+        elif item and column:
             target = (item, column)
+
+            # Do not rebuild rule descriptions on every mouse pixel while
+            # remaining inside the same cell.
+            if target == self.last_target:
+                return
+
+            title = self.tree.heading(column).get("text", column)
+            value = (
+                self.tree.set(item, column)
+                or "Sin valor para esta configuración"
+            )
+            detail = self.explanations.get(column, "")
+            rule_detail = (
+                self.rule_resolver(value)
+                if self.rule_resolver
+                else ""
+            )
+            useful_detail = rule_detail or detail
+            text = (
+                f"{title}: {value}"
+                + (
+                    f"\n{useful_detail}"
+                    if useful_detail
+                    else ""
+                )
+            )
+
         else:
             self._hide()
             return
-        if target != self.last_target:
-            self._show(text, event.x_root + 16, event.y_root + 18)
-            self.last_target = target
+
+        self._show(
+            text,
+            event.x_root + 16,
+            event.y_root + 18,
+        )
+        self.last_target = target
 
     def _highlight(self, item):
         if item == self.hover_item:
@@ -239,8 +311,9 @@ class TreeviewToolTip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
         self.tip_label = tk.Label(
-            tw, text=text, justify=tk.LEFT, background="#ffffe0",
-            relief=tk.SOLID, borderwidth=1, font=("tahoma", 8), wraplength=460,
+            tw, text=text, justify=tk.LEFT, background=COLORS["surface_alt"], foreground=COLORS["text"],
+            relief=tk.SOLID, borderwidth=1, highlightthickness=1,
+            highlightbackground=COLORS["border_light"], font=("Segoe UI", 9), wraplength=460,
         )
         self.tip_label.pack(ipadx=4, ipady=2)
 
@@ -258,7 +331,1537 @@ class TreeviewToolTip:
 
 # Editor de guerreros
 
-class WarriorConfigFrame(ttk.LabelFrame):
+class ToggleSwitch(tk.Canvas):
+    """Small on/off switch backed by a BooleanVar."""
+
+    def __init__(
+        self,
+        parent,
+        variable,
+        command=None,
+        width=38,
+        height=20,
+        **kwargs,
+    ):
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            highlightthickness=0,
+            borderwidth=0,
+            background=COLORS["surface"],
+            cursor="hand2",
+            **kwargs,
+        )
+        self.variable = variable
+        self.command = command
+        self._switch_width = width
+        self._switch_height = height
+        self._state = "normal"
+
+        self.bind("<Button-1>", self._toggle, add="+")
+        self.variable.trace_add("write", self._variable_changed)
+        self._draw()
+
+    def _variable_changed(self, *_args):
+        self._draw()
+
+    def _toggle(self, _event=None):
+        if self._state == "disabled":
+            return "break"
+
+        self.variable.set(not self.variable.get())
+
+        if self.command:
+            self.command()
+
+        return "break"
+
+    def _draw(self):
+        self.delete("all")
+
+        width = self._switch_width
+        height = self._switch_height
+        radius = height // 2
+        enabled = self._state != "disabled"
+        selected = bool(self.variable.get())
+
+        if not enabled:
+            track = COLORS["border"]
+            knob = COLORS["text_disabled"]
+        elif selected:
+            track = COLORS["accent"]
+            knob = "#111111"
+        else:
+            track = COLORS["surface_hover"]
+            knob = COLORS["text_muted"]
+
+        # Rounded track.
+        self.create_oval(
+            1,
+            1,
+            height - 1,
+            height - 1,
+            fill=track,
+            outline=track,
+        )
+        self.create_oval(
+            width - height + 1,
+            1,
+            width - 1,
+            height - 1,
+            fill=track,
+            outline=track,
+        )
+        self.create_rectangle(
+            radius,
+            1,
+            width - radius,
+            height - 1,
+            fill=track,
+            outline=track,
+        )
+
+        knob_size = height - 6
+        knob_y = 3
+
+        if selected:
+            knob_x = width - knob_size - 3
+        else:
+            knob_x = 3
+
+        self.create_oval(
+            knob_x,
+            knob_y,
+            knob_x + knob_size,
+            knob_y + knob_size,
+            fill=knob,
+            outline=knob,
+        )
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+
+        state = kwargs.pop("state", None)
+        if state is not None:
+            self._state = state
+            super().configure(
+                cursor="" if state == "disabled" else "hand2"
+            )
+
+        result = super().configure(**kwargs)
+        self._draw()
+        return result
+
+    config = configure
+
+
+class _ProgressStatusProxy:
+    """Compatibility object exposing Label-like config(text=...)."""
+
+    def __init__(self, progress):
+        self.progress = progress
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+        if "text" in kwargs:
+            self.progress.set_status(kwargs["text"])
+
+    config = configure
+
+    def cget(self, option):
+        if option == "text":
+            return self.progress.status_text
+        raise tk.TclError(f"unknown option {option}")
+
+
+class InlineProgressBar(tk.Canvas):
+    """Canvas progress bar with text rendered directly over the fill."""
+
+    def __init__(
+        self,
+        parent,
+        variable,
+        maximum=100,
+        height=30,
+        **kwargs,
+    ):
+        super().__init__(
+            parent,
+            height=height,
+            highlightthickness=0,
+            borderwidth=0,
+            background=COLORS["surface_alt"],
+            **kwargs,
+        )
+
+        self.variable = variable
+        self.maximum = float(maximum)
+        self.mode = "determinate"
+        self.status_text = "Estado: Listo"
+        self._animation_after_id = None
+        self._animation_position = 0.0
+        self._animation_direction = 1
+
+        self.status_proxy = _ProgressStatusProxy(self)
+
+        self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.variable.trace_add("write", self._variable_changed)
+        self._redraw()
+
+    def _variable_changed(self, *_args):
+        if self.mode == "determinate":
+            self._redraw()
+
+    def set_status(self, text):
+        self.status_text = str(text)
+        self._redraw()
+
+    def _redraw(self):
+        self.delete("all")
+
+        width = max(1, self.winfo_width())
+        height = max(1, self.winfo_height())
+
+        self.create_rectangle(
+            0,
+            0,
+            width,
+            height,
+            fill=COLORS["surface_alt"],
+            outline=COLORS["border"],
+        )
+
+        if self.mode == "indeterminate":
+            chunk_width = max(50, int(width * 0.22))
+            max_x = max(0, width - chunk_width)
+            x = int(max_x * self._animation_position)
+
+            self.create_rectangle(
+                x,
+                1,
+                min(width, x + chunk_width),
+                height - 1,
+                fill=COLORS["accent"],
+                outline="",
+            )
+        else:
+            try:
+                value = float(self.variable.get())
+            except (TypeError, ValueError, tk.TclError):
+                value = 0.0
+
+            fraction = 0.0
+            if self.maximum > 0:
+                fraction = max(0.0, min(1.0, value / self.maximum))
+
+            fill_width = int(width * fraction)
+
+            if fill_width > 0:
+                self.create_rectangle(
+                    1,
+                    1,
+                    max(1, fill_width),
+                    height - 1,
+                    fill=COLORS["accent"],
+                    outline="",
+                )
+
+        # Draw text directly on the canvas: there is no opaque label
+        # obscuring the progress above/below/behind the text.
+        self.create_text(
+            width // 2,
+            height // 2,
+            text=self.status_text,
+            fill=COLORS["text"],
+            font=("Segoe UI Semibold", 9),
+            anchor="center",
+        )
+
+    def start(self, interval=50):
+        self.stop()
+        self.mode = "indeterminate"
+
+        def animate():
+            self._animation_position += 0.035 * self._animation_direction
+
+            if self._animation_position >= 1.0:
+                self._animation_position = 1.0
+                self._animation_direction = -1
+            elif self._animation_position <= 0.0:
+                self._animation_position = 0.0
+                self._animation_direction = 1
+
+            self._redraw()
+            self._animation_after_id = self.after(interval, animate)
+
+        animate()
+
+    def stop(self):
+        if self._animation_after_id is not None:
+            try:
+                self.after_cancel(self._animation_after_id)
+            except tk.TclError:
+                pass
+            self._animation_after_id = None
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+
+        mode = kwargs.pop("mode", None)
+        maximum = kwargs.pop("maximum", None)
+
+        if mode is not None:
+            self.mode = mode
+            if mode != "indeterminate":
+                self.stop()
+
+        if maximum is not None:
+            self.maximum = float(maximum)
+
+        result = super().configure(**kwargs)
+        self._redraw()
+        return result
+
+    config = configure
+
+
+class SkillChecklistCanvas(tk.Canvas):
+    """Compact multi-column skill selector rendered as one Tk widget.
+
+    The existing BooleanVars remain the source of truth.  Only their visual
+    representation moves from many ttk.Checkbuttons/LabelFrames to one Canvas.
+    """
+
+    HEADER_HEIGHT = 26
+    ROW_HEIGHT = 22
+    OUTER_PAD = 2
+    CARD_GAP = 6
+    CARD_PAD_X = 8
+    CARD_PAD_Y = 6
+    CHECK_SIZE = 13
+    MIN_HEIGHT = 48
+    TOOLTIP_DELAY_MS = 450
+
+    def __init__(
+        self,
+        parent,
+        variables,
+        descriptions,
+        categories,
+        allowed_skills=(),
+        **kwargs,
+    ):
+        super().__init__(
+            parent,
+            highlightthickness=0,
+            borderwidth=0,
+            background=COLORS["bg"],
+            **kwargs,
+        )
+
+        self.variables = variables
+        self.descriptions = descriptions
+        self.categories = categories
+        self.allowed_skills = frozenset()
+        self._enabled = True
+        self._hitboxes = []
+        self._hover_skill = None
+        self._redraw_after_id = None
+        self._tooltip_after_id = None
+        self._tooltip_window = None
+        self._tooltip_label = None
+        self._tooltip_position = (0, 0)
+        self._tooltip_attached = True
+
+        for variable in self.variables.values():
+            variable.trace_add(
+                "write",
+                self._variable_changed,
+            )
+
+        self.bind(
+            "<Configure>",
+            self._on_configure,
+            add="+",
+        )
+        self.bind(
+            "<Motion>",
+            self._on_motion,
+            add="+",
+        )
+        self.bind(
+            "<Leave>",
+            self._on_leave,
+            add="+",
+        )
+        self.bind(
+            "<Button-1>",
+            self._on_click,
+            add="+",
+        )
+
+        self.set_allowed_skills(allowed_skills)
+
+    def _variable_changed(self, *_args):
+        self._schedule_redraw()
+
+    def _schedule_redraw(self):
+        if self._redraw_after_id is not None:
+            return
+
+        try:
+            self._redraw_after_id = self.after_idle(
+                self._run_scheduled_redraw
+            )
+        except tk.TclError:
+            self._redraw_after_id = None
+
+    def _run_scheduled_redraw(self):
+        self._redraw_after_id = None
+        try:
+            self._redraw()
+        except tk.TclError:
+            pass
+
+    def _on_configure(self, _event=None):
+        self._schedule_redraw()
+
+    def _visible_categories(self):
+        grouped = {
+            category: []
+            for category in CATEGORY_ORDER
+        }
+
+        for skill in self.variables:
+            if skill not in self.allowed_skills:
+                continue
+
+            category = self.categories.get(
+                skill,
+                "special",
+            )
+
+            if category not in grouped:
+                category = "special"
+
+            grouped.setdefault(
+                category,
+                [],
+            ).append(skill)
+
+        return [
+            (category, grouped.get(category, []))
+            for category in CATEGORY_ORDER
+            if grouped.get(category)
+        ]
+
+    def _desired_height(self):
+        visible = self._visible_categories()
+
+        if not visible:
+            return self.MIN_HEIGHT
+
+        longest = max(
+            len(skills)
+            for _category, skills in visible
+        )
+
+        return max(
+            self.MIN_HEIGHT,
+            (
+                self.OUTER_PAD * 2
+                + self.CARD_PAD_Y * 2
+                + self.HEADER_HEIGHT
+                + longest * self.ROW_HEIGHT
+            ),
+        )
+
+    def set_allowed_skills(self, allowed_skills):
+        allowed = frozenset(
+            skill
+            for skill in allowed_skills
+            if skill in self.variables
+        )
+
+        if allowed == self.allowed_skills:
+            return
+
+        self.allowed_skills = allowed
+        self._hover_skill = None
+        self._hide_tooltip()
+        super().configure(
+            height=self._desired_height()
+        )
+        self._schedule_redraw()
+
+    def set_enabled(self, enabled=True):
+        self._enabled = bool(enabled)
+        self._hover_skill = None
+        self._hide_tooltip()
+
+        try:
+            super().configure(
+                cursor="" if not self._enabled else "arrow"
+            )
+        except tk.TclError:
+            pass
+
+        self._schedule_redraw()
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+
+        state = kwargs.pop(
+            "state",
+            None,
+        )
+
+        if state is not None:
+            self.set_enabled(
+                state != "disabled"
+            )
+
+        result = super().configure(**kwargs)
+        self._schedule_redraw()
+        return result
+
+    config = configure
+
+    def _skill_at(self, x, y):
+        for x1, y1, x2, y2, skill in self._hitboxes:
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return skill
+        return None
+
+    def _on_motion(self, event):
+        skill = self._skill_at(
+            event.x,
+            event.y,
+        )
+
+        try:
+            super().configure(
+                cursor=(
+                    "hand2"
+                    if self._enabled and skill
+                    else "arrow"
+                )
+            )
+        except tk.TclError:
+            pass
+
+        if skill == self._hover_skill:
+            if skill:
+                self._tooltip_position = (
+                    event.x_root + 16,
+                    event.y_root + 18,
+                )
+            return
+
+        self._hover_skill = skill
+        self._hide_tooltip()
+
+        if skill:
+            self._tooltip_position = (
+                event.x_root + 16,
+                event.y_root + 18,
+            )
+            self._tooltip_after_id = self.after(
+                self.TOOLTIP_DELAY_MS,
+                self._show_hover_tooltip,
+            )
+
+        self._schedule_redraw()
+
+    def _on_leave(self, _event=None):
+        self._hover_skill = None
+        self._hide_tooltip()
+
+        try:
+            super().configure(
+                cursor="arrow"
+            )
+        except tk.TclError:
+            pass
+
+        self._schedule_redraw()
+
+    def _on_click(self, event):
+        if not self._enabled:
+            return "break"
+
+        skill = self._skill_at(
+            event.x,
+            event.y,
+        )
+
+        if not skill:
+            return None
+
+        variable = self.variables[skill]
+        variable.set(
+            not bool(variable.get())
+        )
+
+        return "break"
+
+    def _show_hover_tooltip(self):
+        self._tooltip_after_id = None
+
+        skill = self._hover_skill
+        if not skill:
+            return
+
+        description = self.descriptions.get(
+            skill,
+            "Sin descripción disponible.",
+        )
+
+        if not description:
+            return
+
+        try:
+            x, y = self._tooltip_position
+
+            window = tk.Toplevel(self)
+            window.wm_overrideredirect(True)
+            window.wm_geometry(
+                f"+{x}+{y}"
+            )
+
+            label = tk.Label(
+                window,
+                text=description,
+                justify=tk.LEFT,
+                background=COLORS["surface_alt"],
+                foreground=COLORS["text"],
+                relief=tk.SOLID,
+                borderwidth=1,
+                highlightthickness=1,
+                highlightbackground=COLORS["border_light"],
+                font=("Segoe UI", 9),
+                wraplength=420,
+            )
+            label.pack(
+                ipadx=4,
+                ipady=2,
+            )
+
+            self._tooltip_window = window
+            self._tooltip_label = label
+
+        except tk.TclError:
+            self._tooltip_window = None
+            self._tooltip_label = None
+
+    def _hide_tooltip(self):
+        if self._tooltip_after_id is not None:
+            try:
+                self.after_cancel(
+                    self._tooltip_after_id
+                )
+            except tk.TclError:
+                pass
+            self._tooltip_after_id = None
+
+        window = self._tooltip_window
+        self._tooltip_window = None
+        self._tooltip_label = None
+
+        if window is not None:
+            try:
+                window.destroy()
+            except tk.TclError:
+                pass
+
+    def _draw_checkbox(
+        self,
+        x,
+        y,
+        checked,
+        enabled,
+    ):
+        size = self.CHECK_SIZE
+
+        if checked and enabled:
+            fill = COLORS["accent"]
+            outline = COLORS["accent"]
+            mark = "#111111"
+        elif checked:
+            fill = COLORS["border"]
+            outline = COLORS["border"]
+            mark = COLORS["text_disabled"]
+        else:
+            fill = COLORS["surface_alt"]
+            outline = (
+                COLORS["border_light"]
+                if enabled
+                else COLORS["border"]
+            )
+            mark = COLORS["text_disabled"]
+
+        self.create_rectangle(
+            x,
+            y,
+            x + size,
+            y + size,
+            fill=fill,
+            outline=outline,
+            width=1,
+        )
+
+        if checked:
+            self.create_text(
+                x + size / 2,
+                y + size / 2 - 0.5,
+                text="✓",
+                fill=mark,
+                font=("Segoe UI Semibold", 9),
+                anchor="center",
+            )
+
+    def _redraw(self):
+        self.delete("all")
+        self._hitboxes = []
+
+        width = max(
+            1,
+            int(self.winfo_width()),
+        )
+        height = max(
+            self.MIN_HEIGHT,
+            self._desired_height(),
+        )
+
+        visible = self._visible_categories()
+
+        if not visible:
+            self.create_text(
+                6,
+                height / 2,
+                text=(
+                    "No hay habilidades seleccionables disponibles "
+                    "para este perfil."
+                ),
+                fill=COLORS["text_muted"],
+                font=("Segoe UI", 9),
+                anchor="w",
+            )
+            return
+
+        category_count = len(visible)
+        usable_width = (
+            width
+            - self.OUTER_PAD * 2
+            - self.CARD_GAP * (category_count - 1)
+        )
+
+        card_width = max(
+            80.0,
+            usable_width / category_count,
+        )
+
+        for index, (category, skills) in enumerate(visible):
+            x1 = (
+                self.OUTER_PAD
+                + index * (card_width + self.CARD_GAP)
+            )
+            x2 = min(
+                width - self.OUTER_PAD,
+                x1 + card_width,
+            )
+            y1 = self.OUTER_PAD
+            y2 = height - self.OUTER_PAD
+
+            self.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=COLORS["surface"],
+                outline=COLORS["border"],
+                width=1,
+            )
+
+            self.create_text(
+                x1 + self.CARD_PAD_X,
+                y1 + self.CARD_PAD_Y + 8,
+                text=CATEGORY_LABELS[category],
+                fill=COLORS["text"],
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+
+            row_top = (
+                y1
+                + self.CARD_PAD_Y
+                + self.HEADER_HEIGHT
+            )
+
+            for row_index, skill in enumerate(skills):
+                row_y1 = (
+                    row_top
+                    + row_index * self.ROW_HEIGHT
+                )
+                row_y2 = row_y1 + self.ROW_HEIGHT
+
+                hovered = (
+                    skill == self._hover_skill
+                )
+
+                if hovered:
+                    self.create_rectangle(
+                        x1 + 1,
+                        row_y1,
+                        x2 - 1,
+                        row_y2,
+                        fill=COLORS["surface_hover"],
+                        outline="",
+                    )
+
+                check_x = (
+                    x1
+                    + self.CARD_PAD_X
+                )
+                check_y = (
+                    row_y1
+                    + (
+                        self.ROW_HEIGHT
+                        - self.CHECK_SIZE
+                    ) / 2
+                )
+
+                checked = bool(
+                    self.variables[skill].get()
+                )
+
+                self._draw_checkbox(
+                    check_x,
+                    check_y,
+                    checked,
+                    self._enabled,
+                )
+
+                self.create_text(
+                    check_x
+                    + self.CHECK_SIZE
+                    + 7,
+                    row_y1 + self.ROW_HEIGHT / 2,
+                    text=skill,
+                    fill=(
+                        COLORS["text"]
+                        if self._enabled
+                        else COLORS["text_disabled"]
+                    ),
+                    font=("Segoe UI", 9),
+                    anchor="w",
+                )
+
+                self._hitboxes.append(
+                    (
+                        x1 + 1,
+                        row_y1,
+                        x2 - 1,
+                        row_y2,
+                        skill,
+                    )
+                )
+
+
+class _StatValueProxy:
+    """Entry-like compatibility proxy backed by StatGridCanvas."""
+
+    def __init__(self, canvas, attribute):
+        self.canvas = canvas
+        self.attribute = attribute
+
+    def get(self):
+        return self.canvas.get_value(self.attribute)
+
+    def delete(self, _first=0, _last=None):
+        self.canvas.set_value(self.attribute, "")
+
+    def insert(self, _index, value):
+        self.canvas.set_value(self.attribute, value)
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+        state = kwargs.pop("state", None)
+        if state is not None:
+            self.canvas.set_enabled(state != "disabled")
+
+    config = configure
+
+
+class StatGridCanvas(tk.Canvas):
+    """Render all six warrior attributes as one lightweight widget."""
+
+    HEIGHT = 70
+    OUTER_PAD = 1
+    GAP = 4
+    CARD_PAD = 6
+    CONTROL_HEIGHT = 30
+    BUTTON_WIDTH = 30
+    VALUE_MIN_WIDTH = 42
+
+    def __init__(
+        self,
+        parent,
+        values,
+        **kwargs,
+    ):
+        super().__init__(
+            parent,
+            height=self.HEIGHT,
+            highlightthickness=0,
+            borderwidth=0,
+            background=COLORS["bg"],
+            cursor="arrow",
+            **kwargs,
+        )
+
+        self.values = {
+            key: str(value)
+            for key, value in values.items()
+        }
+        self.attributes = tuple(values)
+        self._enabled = True
+        self._hitboxes = []
+        self._hover_target = None
+        self._editor = None
+        self._editing_attribute = None
+        self._redraw_after_id = None
+
+        self.bind(
+            "<Configure>",
+            self._schedule_redraw,
+            add="+",
+        )
+        self.bind(
+            "<Motion>",
+            self._on_motion,
+            add="+",
+        )
+        self.bind(
+            "<Leave>",
+            self._on_leave,
+            add="+",
+        )
+        self.bind(
+            "<Button-1>",
+            self._on_click,
+            add="+",
+        )
+
+        self._schedule_redraw()
+
+    def proxies(self):
+        return {
+            attribute: _StatValueProxy(
+                self,
+                attribute,
+            )
+            for attribute in self.attributes
+        }
+
+    def get_value(self, attribute):
+        return self.values.get(
+            attribute,
+            "0",
+        )
+
+    def set_value(self, attribute, value):
+        if attribute not in self.values:
+            return
+
+        self.values[attribute] = str(value)
+        self._schedule_redraw()
+
+    def change_value(self, attribute, delta):
+        try:
+            current = int(
+                self.values.get(
+                    attribute,
+                    "0",
+                )
+            )
+        except (TypeError, ValueError):
+            current = 0
+
+        self.values[attribute] = str(
+            max(
+                0,
+                current + delta,
+            )
+        )
+        self._schedule_redraw()
+
+    def set_enabled(self, enabled=True):
+        self._enabled = bool(enabled)
+
+        if not self._enabled:
+            self._finish_edit(
+                commit=True,
+            )
+
+        try:
+            super().configure(
+                cursor="arrow",
+            )
+        except tk.TclError:
+            pass
+
+        self._hover_target = None
+        self._schedule_redraw()
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+
+        state = kwargs.pop(
+            "state",
+            None,
+        )
+
+        if state is not None:
+            self.set_enabled(
+                state != "disabled"
+            )
+
+        result = super().configure(**kwargs)
+        self._schedule_redraw()
+        return result
+
+    config = configure
+
+    def _schedule_redraw(self, _event=None):
+        if self._redraw_after_id is not None:
+            return
+
+        try:
+            self._redraw_after_id = self.after_idle(
+                self._run_scheduled_redraw
+            )
+        except tk.TclError:
+            self._redraw_after_id = None
+
+    def _run_scheduled_redraw(self):
+        self._redraw_after_id = None
+
+        try:
+            self._redraw()
+        except tk.TclError:
+            pass
+
+    def _target_at(self, x, y):
+        for (
+            x1,
+            y1,
+            x2,
+            y2,
+            attribute,
+            action,
+        ) in self._hitboxes:
+            if (
+                x1 <= x <= x2
+                and y1 <= y <= y2
+            ):
+                return attribute, action
+
+        return None
+
+    def _on_motion(self, event):
+        target = self._target_at(
+            event.x,
+            event.y,
+        )
+
+        if target != self._hover_target:
+            self._hover_target = target
+            self._schedule_redraw()
+
+        try:
+            super().configure(
+                cursor=(
+                    "hand2"
+                    if self._enabled and target
+                    else "arrow"
+                )
+            )
+        except tk.TclError:
+            pass
+
+    def _on_leave(self, _event=None):
+        if self._hover_target is not None:
+            self._hover_target = None
+            self._schedule_redraw()
+
+        try:
+            super().configure(
+                cursor="arrow",
+            )
+        except tk.TclError:
+            pass
+
+    def _on_click(self, event):
+        if not self._enabled:
+            return "break"
+
+        target = self._target_at(
+            event.x,
+            event.y,
+        )
+
+        if target is None:
+            self._finish_edit(
+                commit=True,
+            )
+            return None
+
+        attribute, action = target
+
+        if action == "minus":
+            self._finish_edit(
+                commit=True,
+            )
+            self.change_value(
+                attribute,
+                -1,
+            )
+
+        elif action == "plus":
+            self._finish_edit(
+                commit=True,
+            )
+            self.change_value(
+                attribute,
+                1,
+            )
+
+        elif action == "value":
+            self._begin_edit(
+                attribute,
+            )
+
+        return "break"
+
+    def _value_box(self, attribute):
+        for (
+            x1,
+            y1,
+            x2,
+            y2,
+            current_attribute,
+            action,
+        ) in self._hitboxes:
+            if (
+                current_attribute == attribute
+                and action == "value"
+            ):
+                return x1, y1, x2, y2
+
+        return None
+
+    def _ensure_editor(self):
+        if self._editor is not None:
+            return self._editor
+
+        editor = ttk.Entry(
+            self,
+            width=4,
+            justify="center",
+            style="Stat.TEntry",
+            font=("Segoe UI Semibold", 11),
+        )
+
+        editor.bind(
+            "<Return>",
+            lambda _event:
+                self._finish_edit(commit=True),
+            add="+",
+        )
+
+        editor.bind(
+            "<Escape>",
+            lambda _event:
+                self._finish_edit(commit=False),
+            add="+",
+        )
+
+        editor.bind(
+            "<FocusOut>",
+            lambda _event:
+                self._finish_edit(commit=True),
+            add="+",
+        )
+
+        self._editor = editor
+        return editor
+
+    def _begin_edit(self, attribute):
+        box = self._value_box(attribute)
+        if box is None:
+            return
+
+        self._finish_edit(
+            commit=True,
+        )
+
+        editor = self._ensure_editor()
+        self._editing_attribute = attribute
+
+        editor.delete(
+            0,
+            tk.END,
+        )
+        editor.insert(
+            0,
+            self.values.get(
+                attribute,
+                "0",
+            ),
+        )
+
+        x1, y1, x2, y2 = box
+
+        editor.place(
+            x=int(x1),
+            y=int(y1),
+            width=max(
+                self.VALUE_MIN_WIDTH,
+                int(x2 - x1),
+            ),
+            height=max(
+                24,
+                int(y2 - y1),
+            ),
+        )
+
+        editor.focus_set()
+        editor.selection_range(
+            0,
+            tk.END,
+        )
+
+    def _finish_edit(
+        self,
+        commit=True,
+    ):
+        editor = self._editor
+        attribute = self._editing_attribute
+
+        if (
+            editor is None
+            or attribute is None
+        ):
+            return
+
+        if commit:
+            try:
+                value = max(
+                    0,
+                    int(
+                        editor.get().strip()
+                    ),
+                )
+            except (TypeError, ValueError):
+                try:
+                    value = max(
+                        0,
+                        int(
+                            self.values.get(
+                                attribute,
+                                "0",
+                            )
+                        ),
+                    )
+                except (TypeError, ValueError):
+                    value = 0
+
+            self.values[attribute] = str(
+                value
+            )
+
+        editor.place_forget()
+        self._editing_attribute = None
+        self._schedule_redraw()
+
+    def _draw_button(
+        self,
+        x1,
+        y1,
+        x2,
+        y2,
+        text,
+        hovered,
+    ):
+        if not self._enabled:
+            fill = COLORS["surface"]
+            foreground = COLORS["text_disabled"]
+            outline = COLORS["border"]
+        elif hovered:
+            fill = COLORS["surface_hover"]
+            foreground = COLORS["text"]
+            outline = COLORS["border_light"]
+        else:
+            fill = COLORS["surface_alt"]
+            foreground = COLORS["text"]
+            outline = COLORS["border"]
+
+        self.create_rectangle(
+            x1,
+            y1,
+            x2,
+            y2,
+            fill=fill,
+            outline=outline,
+            width=1,
+        )
+
+        self.create_text(
+            (x1 + x2) / 2,
+            (y1 + y2) / 2 - 1,
+            text=text,
+            fill=foreground,
+            font=("Segoe UI Semibold", 12),
+            anchor="center",
+        )
+
+    def _redraw(self):
+        self.delete("all")
+        self._hitboxes = []
+
+        width = max(
+            1,
+            int(self.winfo_width()),
+        )
+        height = max(
+            self.HEIGHT,
+            int(self.winfo_height()),
+        )
+
+        count = max(
+            1,
+            len(self.attributes),
+        )
+
+        usable_width = (
+            width
+            - self.OUTER_PAD * 2
+            - self.GAP * (count - 1)
+        )
+
+        card_width = max(
+            88.0,
+            usable_width / count,
+        )
+
+        card_y1 = self.OUTER_PAD
+        card_y2 = height - self.OUTER_PAD
+
+        for index, attribute in enumerate(
+            self.attributes
+        ):
+            x1 = (
+                self.OUTER_PAD
+                + index * (
+                    card_width
+                    + self.GAP
+                )
+            )
+
+            x2 = min(
+                width - self.OUTER_PAD,
+                x1 + card_width,
+            )
+
+            self.create_rectangle(
+                x1,
+                card_y1,
+                x2,
+                card_y2,
+                fill=COLORS["surface"],
+                outline=COLORS["border"],
+                width=1,
+            )
+
+            self.create_text(
+                (x1 + x2) / 2,
+                card_y1 + 13,
+                text=attribute,
+                fill=(
+                    COLORS["text"]
+                    if self._enabled
+                    else COLORS["text_disabled"]
+                ),
+                font=("Segoe UI Semibold", 10),
+                anchor="center",
+            )
+
+            controls_y1 = (
+                card_y2
+                - self.CONTROL_HEIGHT
+                - self.CARD_PAD
+            )
+
+            controls_y2 = (
+                card_y2
+                - self.CARD_PAD
+            )
+
+            inner_x1 = x1 + self.CARD_PAD
+            inner_x2 = x2 - self.CARD_PAD
+
+            minus_x1 = inner_x1
+            minus_x2 = (
+                minus_x1
+                + self.BUTTON_WIDTH
+            )
+
+            plus_x2 = inner_x2
+            plus_x1 = (
+                plus_x2
+                - self.BUTTON_WIDTH
+            )
+
+            value_x1 = (
+                minus_x2
+                + 3
+            )
+            value_x2 = (
+                plus_x1
+                - 3
+            )
+
+            self._draw_button(
+                minus_x1,
+                controls_y1,
+                minus_x2,
+                controls_y2,
+                "−",
+                (
+                    self._hover_target
+                    == (
+                        attribute,
+                        "minus",
+                    )
+                ),
+            )
+
+            self._draw_button(
+                plus_x1,
+                controls_y1,
+                plus_x2,
+                controls_y2,
+                "+",
+                (
+                    self._hover_target
+                    == (
+                        attribute,
+                        "plus",
+                    )
+                ),
+            )
+
+            value_hovered = (
+                self._hover_target
+                == (
+                    attribute,
+                    "value",
+                )
+            )
+
+            self.create_rectangle(
+                value_x1,
+                controls_y1,
+                value_x2,
+                controls_y2,
+                fill=(
+                    COLORS["surface_hover"]
+                    if (
+                        self._enabled
+                        and value_hovered
+                    )
+                    else COLORS["bg"]
+                ),
+                outline=(
+                    COLORS["accent"]
+                    if (
+                        self._enabled
+                        and value_hovered
+                    )
+                    else COLORS["border"]
+                ),
+                width=1,
+            )
+
+            if (
+                self._editing_attribute
+                != attribute
+            ):
+                self.create_text(
+                    (
+                        value_x1
+                        + value_x2
+                    ) / 2,
+                    (
+                        controls_y1
+                        + controls_y2
+                    ) / 2,
+                    text=self.values.get(
+                        attribute,
+                        "0",
+                    ),
+                    fill=(
+                        COLORS["text"]
+                        if self._enabled
+                        else COLORS["text_disabled"]
+                    ),
+                    font=(
+                        "Segoe UI Semibold",
+                        11,
+                    ),
+                    anchor="center",
+                )
+
+            self._hitboxes.extend(
+                (
+                    (
+                        minus_x1,
+                        controls_y1,
+                        minus_x2,
+                        controls_y2,
+                        attribute,
+                        "minus",
+                    ),
+                    (
+                        value_x1,
+                        controls_y1,
+                        value_x2,
+                        controls_y2,
+                        attribute,
+                        "value",
+                    ),
+                    (
+                        plus_x1,
+                        controls_y1,
+                        plus_x2,
+                        controls_y2,
+                        attribute,
+                        "plus",
+                    ),
+                )
+            )
+
+class WarriorConfigFrame(ttk.Frame):
+
+
 
     def __init__(
         self,
@@ -268,10 +1871,8 @@ class WarriorConfigFrame(ttk.LabelFrame):
         skill_descriptions=None,
         skill_categories=None,
     ):
-        super().__init__(
-            parent,
-            text=title,
-        )
+        super().__init__(parent)
+        self.title = title
 
         self.stats = {
             "HA": 4,
@@ -322,231 +1923,278 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.attr_entries = {}
         self.attr_buttons = []
         self.interactable_widgets = []
-        self.skill_widgets = {}
         self.option_filter = None
 
         self._build_gui()
 
+
     def _build_gui(self):
+        # Editor compartido por Candidato y Enemigo.
+        # Se usa deliberadamente el mismo diseño compacto en ambos.
+
+        content = ttk.Frame(
+            self,
+            padding=(14, 6, 14, 10),
+        )
+        content.pack(fill="both", expand=True)
+
+        # -------------------------------------------------------------
+        # Atributos básicos
+        # -------------------------------------------------------------
+        attributes_section = ttk.Frame(content)
+        attributes_section.pack(
+            fill="x",
+            pady=(0, 10),
+        )
 
         ttk.Label(
-            self,
+            attributes_section,
             text="Atributos Básicos",
-            font=("Arial", 12, "bold"),
+            style="Section.TLabel",
         ).pack(
-            pady=(5, 2)
+            anchor="w",
+            pady=(0, 4),
         )
 
-        attr_frame = ttk.Frame(self)
-
-        attr_frame.pack(
-            pady=2
+        self.stats_canvas = StatGridCanvas(
+            attributes_section,
+            self.stats,
         )
-
-        for i, (attr, val) in enumerate(
-            self.stats.items()
-        ):
-
-            col = i * 4
-
-            ttk.Label(
-                attr_frame,
-                text=f"{attr}:",
-                font=("Arial", 11, "bold"),
-            ).grid(
-                row=0,
-                column=col,
-                padx=(4, 2),
-            )
-
-            btn_sub = ttk.Button(
-                attr_frame,
-                text="-",
-                width=3,
-                command=lambda a=attr:
-                    self.change_stat(a, -1),
-            )
-
-            btn_sub.grid(
-                row=0,
-                column=col + 1,
-                padx=1,
-            )
-
-            ent = ttk.Entry(
-                attr_frame,
-                width=5,
-                justify="center",
-                font=("Arial", 11, "bold"),
-            )
-
-            ent.insert(
-                0,
-                str(val),
-            )
-
-            ent.grid(
-                row=0,
-                column=col + 2,
-                padx=1,
-            )
-
-            btn_add = ttk.Button(
-                attr_frame,
-                text="+",
-                width=3,
-                command=lambda a=attr:
-                    self.change_stat(a, 1),
-            )
-
-            btn_add.grid(
-                row=0,
-                column=col + 3,
-                padx=(1, 5),
-            )
-
-            self.attr_entries[attr] = ent
-
-            self.attr_buttons.extend(
-                [
-                    btn_sub,
-                    btn_add,
-                ]
-            )
-
-            self.interactable_widgets.extend(
-                [
-                    ent,
-                    btn_sub,
-                    btn_add,
-                ]
-            )
-
-        ttk.Separator(
-            self,
-            orient="horizontal",
-        ).pack(
+        self.stats_canvas.pack(
             fill="x",
-            pady=5,
         )
+
+        # Mantiene la API tipo Entry que usan change_stat(),
+        # get_config_dict() y load_config(), sin crear seis Entry permanentes.
+        self.attr_entries = (
+            self.stats_canvas.proxies()
+        )
+        self.attr_buttons = []
+        self.interactable_widgets.append(
+            self.stats_canvas
+        )
+
+        # -------------------------------------------------------------
+        # Equipamiento
+        # -------------------------------------------------------------
+        equipment_section = ttk.Frame(content)
+        equipment_section.pack(fill="x", pady=(0, 10))
 
         ttk.Label(
-            self,
+            equipment_section,
             text="Equipamiento Base",
-            font=("Arial", 10, "bold"),
-        ).pack(
-            pady=(5, 2)
-        )
+            style="Section.TLabel",
+        ).pack(anchor="w", pady=(0, 4))
 
-        eq_frame = ttk.Frame(self)
-
-        eq_frame.pack(
-            pady=2,
-            fill="x",
-            padx=15,
-        )
-
+        eq_frame = ttk.Frame(equipment_section)
+        eq_frame.pack(fill="x")
         eq_frame.columnconfigure(0, weight=1, uniform="hands")
         eq_frame.columnconfigure(1, weight=1, uniform="hands")
 
-        main_hand = ttk.LabelFrame(eq_frame, text=" Mano principal ")
-        main_hand.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
-        main_hand.columnconfigure(1, weight=1)
-        ttk.Label(main_hand, text="Generales:").grid(row=0, column=0, sticky="e", padx=(7, 2), pady=2)
-        self.cb_main = ttk.Combobox(
-            main_hand, textvariable=self.eq_main_general,
-            values=("Ninguna", *WEAPONS_GENERAL),
-            state="readonly", width=20,
+        main_hand = ttk.LabelFrame(
+            eq_frame,
+            text="Mano principal",
+            style="Card.TLabelframe",
+            padding=(8, 5),
         )
-        self.cb_main.grid(row=0, column=1, sticky="ew", padx=(2, 7), pady=2)
-        self.cb_main.bind("<<ComboboxSelected>>", lambda event: self._select_weapon("main", "general"))
-        ToolTip(self.cb_main, lambda: weapon_descriptions().get(self.eq_main_general.get(), ""))
-        ttk.Label(main_hand, text="Especiales:").grid(row=1, column=0, sticky="e", padx=(7, 2), pady=2)
+        main_hand.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+
+        off_hand = ttk.LabelFrame(
+            eq_frame,
+            text="Mano secundaria",
+            style="Card.TLabelframe",
+            padding=(8, 5),
+        )
+        off_hand.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+
+        for panel in (main_hand, off_hand):
+            panel.columnconfigure(1, weight=1, uniform="compact_hand_fields")
+            panel.columnconfigure(3, weight=1, uniform="compact_hand_fields")
+
+        def field_position(index):
+            row = index // 2
+            pair = index % 2
+            label_column = pair * 2
+            widget_column = label_column + 1
+            return row, label_column, widget_column
+
+        def place_field(panel, index, label_text, widget):
+            row, label_column, widget_column = field_position(index)
+
+            ttk.Label(
+                panel,
+                text=label_text,
+                style="Card.TLabel",
+            ).grid(
+                row=row,
+                column=label_column,
+                sticky="w",
+                padx=(0, 6),
+                pady=2,
+            )
+
+            widget.grid(
+                row=row,
+                column=widget_column,
+                sticky="ew",
+                padx=((0, 10) if widget_column == 1 else (0, 0)),
+                pady=2,
+            )
+
+        self.cb_main = ttk.Combobox(
+            main_hand,
+            textvariable=self.eq_main_general,
+            values=("Ninguna", *WEAPONS_GENERAL),
+            state="readonly",
+            width=20,
+        )
+        place_field(main_hand, 0, "Generales:", self.cb_main)
+        self.cb_main.bind(
+            "<<ComboboxSelected>>",
+            lambda event: self._select_weapon("main", "general"),
+        )
+        ToolTip(
+            self.cb_main,
+            lambda: weapon_descriptions().get(
+                self.eq_main_general.get(),
+                "",
+            ),
+        )
+
         self.cb_main_exclusive = ttk.Combobox(
-            main_hand, textvariable=self.eq_main_exclusive,
+            main_hand,
+            textvariable=self.eq_main_exclusive,
             values=(
                 "Ninguna",
-                *(weapon for weapon in WEAPONS_EXCLUSIVE
-                  if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS),
+                *(
+                    weapon for weapon in WEAPONS_EXCLUSIVE
+                    if weapon not in MAIN_HAND_FORBIDDEN_WEAPONS
+                ),
             ),
-            state="readonly", width=20,
+            state="readonly",
+            width=20,
         )
-        self.cb_main_exclusive.grid(row=1, column=1, sticky="ew", padx=(2, 7), pady=2)
+        place_field(main_hand, 1, "Especiales:", self.cb_main_exclusive)
         self.cb_main_exclusive.bind(
-            "<<ComboboxSelected>>", lambda event: self._select_weapon("main", "exclusive")
+            "<<ComboboxSelected>>",
+            lambda event: self._select_weapon("main", "exclusive"),
         )
-        ToolTip(self.cb_main_exclusive, lambda: weapon_descriptions().get(self.eq_main_exclusive.get(), ""))
-        ttk.Label(main_hand, text="Material:").grid(row=2, column=0, sticky="e", padx=(7, 2), pady=2)
+        ToolTip(
+            self.cb_main_exclusive,
+            lambda: weapon_descriptions().get(
+                self.eq_main_exclusive.get(),
+                "",
+            ),
+        )
+
         self.cb_main_material = ttk.Combobox(
-            main_hand, textvariable=self.eq_main_material, values=WEAPON_MATERIALS,
-            state="readonly", width=20,
+            main_hand,
+            textvariable=self.eq_main_material,
+            values=WEAPON_MATERIALS,
+            state="readonly",
+            width=20,
         )
-        self.cb_main_material.grid(row=2, column=1, sticky="ew", padx=(2, 7), pady=2)
-        ttk.Label(main_hand, text="Veneno:").grid(
-            row=3, column=0, sticky="e", padx=(7, 2), pady=2
-        )
+        place_field(main_hand, 2, "Material:", self.cb_main_material)
+
         self.cb_main_poison = ttk.Combobox(
-            main_hand, textvariable=self.eq_main_poison, values=POISONS,
-            state="readonly", width=20,
+            main_hand,
+            textvariable=self.eq_main_poison,
+            values=POISONS,
+            state="readonly",
+            width=20,
         )
-        self.cb_main_poison.grid(row=3, column=1, sticky="ew", padx=(2, 7), pady=2)
+        place_field(main_hand, 3, "Veneno:", self.cb_main_poison)
         ToolTip(
             self.cb_main_poison,
-            lambda: POISON_DESCRIPTIONS.get(self.eq_main_poison.get(), ""),
+            lambda: POISON_DESCRIPTIONS.get(
+                self.eq_main_poison.get(),
+                "",
+            ),
         )
 
-        off_hand = ttk.LabelFrame(eq_frame, text=" Mano secundaria ")
-        off_hand.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
-        off_hand.columnconfigure(1, weight=1)
-        ttk.Label(off_hand, text="Generales:").grid(row=0, column=0, sticky="e", padx=(7, 2), pady=2)
         self.cb_offhand = ttk.Combobox(
-            off_hand, textvariable=self.eq_off_general, values=OFFHAND_GENERAL,
-            state="readonly", width=20,
+            off_hand,
+            textvariable=self.eq_off_general,
+            values=OFFHAND_GENERAL,
+            state="readonly",
+            width=20,
         )
-        self.cb_offhand.grid(row=0, column=1, sticky="ew", padx=(2, 7), pady=2)
-        self.cb_offhand.bind("<<ComboboxSelected>>", lambda event: self._select_weapon("off", "general"))
-        ToolTip(self.cb_offhand, lambda: weapon_descriptions().get(self.eq_off_general.get(), ""))
-        ttk.Label(off_hand, text="Especiales:").grid(row=1, column=0, sticky="e", padx=(7, 2), pady=2)
+        place_field(off_hand, 0, "Generales:", self.cb_offhand)
+        self.cb_offhand.bind(
+            "<<ComboboxSelected>>",
+            lambda event: self._select_weapon("off", "general"),
+        )
+        ToolTip(
+            self.cb_offhand,
+            lambda: weapon_descriptions().get(
+                self.eq_off_general.get(),
+                "",
+            ),
+        )
+
         self.cb_off_exclusive = ttk.Combobox(
-            off_hand, textvariable=self.eq_off_exclusive, values=OFFHAND_EXCLUSIVE,
-            state="readonly", width=20,
+            off_hand,
+            textvariable=self.eq_off_exclusive,
+            values=OFFHAND_EXCLUSIVE,
+            state="readonly",
+            width=20,
         )
-        self.cb_off_exclusive.grid(row=1, column=1, sticky="ew", padx=(2, 7), pady=2)
+        place_field(off_hand, 1, "Especiales:", self.cb_off_exclusive)
         self.cb_off_exclusive.bind(
-            "<<ComboboxSelected>>", lambda event: self._select_weapon("off", "exclusive")
+            "<<ComboboxSelected>>",
+            lambda event: self._select_weapon("off", "exclusive"),
         )
-        ToolTip(self.cb_off_exclusive, lambda: weapon_descriptions().get(self.eq_off_exclusive.get(), ""))
-        ttk.Label(off_hand, text="Material:").grid(row=2, column=0, sticky="e", padx=(7, 2), pady=2)
+        ToolTip(
+            self.cb_off_exclusive,
+            lambda: weapon_descriptions().get(
+                self.eq_off_exclusive.get(),
+                "",
+            ),
+        )
+
         self.cb_off_material = ttk.Combobox(
-            off_hand, textvariable=self.eq_off_material, values=WEAPON_MATERIALS,
-            state="readonly", width=20,
+            off_hand,
+            textvariable=self.eq_off_material,
+            values=WEAPON_MATERIALS,
+            state="readonly",
+            width=20,
         )
-        self.cb_off_material.grid(row=2, column=1, sticky="ew", padx=(2, 7), pady=2)
-        ttk.Label(off_hand, text="Veneno:").grid(
-            row=3, column=0, sticky="e", padx=(7, 2), pady=2
-        )
+        place_field(off_hand, 2, "Material:", self.cb_off_material)
+
         self.cb_off_poison = ttk.Combobox(
-            off_hand, textvariable=self.eq_off_poison, values=POISONS,
-            state="readonly", width=20,
+            off_hand,
+            textvariable=self.eq_off_poison,
+            values=POISONS,
+            state="readonly",
+            width=20,
         )
-        self.cb_off_poison.grid(row=3, column=1, sticky="ew", padx=(2, 7), pady=2)
+        place_field(off_hand, 3, "Veneno:", self.cb_off_poison)
         ToolTip(
             self.cb_off_poison,
-            lambda: POISON_DESCRIPTIONS.get(self.eq_off_poison.get(), ""),
+            lambda: POISON_DESCRIPTIONS.get(
+                self.eq_off_poison.get(),
+                "",
+            ),
         )
 
-        ttk.Separator(eq_frame, orient="horizontal").grid(
-            row=1, column=0, columnspan=2, sticky="ew", pady=5
+        defense = ttk.Frame(
+            equipment_section,
+            style="Card.TFrame",
+            padding=(8, 5),
         )
+        defense.pack(fill="x", pady=(6, 0))
+        defense.columnconfigure(0, weight=1, uniform="defense")
+        defense.columnconfigure(1, weight=1, uniform="defense")
 
-        defense = ttk.Frame(eq_frame)
-        defense.grid(row=2, column=0, columnspan=2, sticky="ew")
-        for column in range(2):
-            defense.columnconfigure(column, weight=1, uniform="defense")
+        armor_cell = ttk.Frame(defense, style="Card.TFrame")
+        armor_cell.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        armor_cell.columnconfigure(1, weight=1)
 
-        armor_cell = ttk.Frame(defense)
-        armor_cell.grid(row=0, column=0, sticky="ew")
-        ttk.Label(armor_cell, text="Armadura:").pack(side="left", padx=(0, 4))
+        ttk.Label(
+            armor_cell,
+            text="Armadura:",
+            style="Card.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
 
         self.cb_armor = ttk.Combobox(
             armor_cell,
@@ -555,33 +2203,55 @@ class WarriorConfigFrame(ttk.LabelFrame):
             state="readonly",
             width=18,
         )
-        self.cb_armor.pack(side="left", fill="x", expand=True)
-        self.cb_armor.bind("<<ComboboxSelected>>", self.on_equipment_change)
-        ToolTip(self.cb_armor, lambda: armour_descriptions().get(self.eq_armor.get(), ""))
-
-        equipment_cell = ttk.Frame(defense)
-        equipment_cell.grid(row=0, column=1, sticky="ew", padx=(10, 0))
-        equipment_cell.columnconfigure(1, weight=1)
-        ttk.Label(equipment_cell, text="Equipamiento:").grid(
-            row=0, column=0, sticky="e", padx=(0, 4)
+        self.cb_armor.grid(row=0, column=1, sticky="ew")
+        self.cb_armor.bind(
+            "<<ComboboxSelected>>",
+            self.on_equipment_change,
         )
+        ToolTip(
+            self.cb_armor,
+            lambda: armour_descriptions().get(
+                self.eq_armor.get(),
+                "",
+            ),
+        )
+
+        equipment_cell = ttk.Frame(defense, style="Card.TFrame")
+        equipment_cell.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        equipment_cell.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            equipment_cell,
+            text="Equipamiento:",
+            style="Card.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+
         self.equipment_button = ttk.Menubutton(
             equipment_cell,
             textvariable=self.equipment_button_text,
-            width=25,
+            style="Card.TMenubutton",
         )
         self.equipment_button.grid(row=0, column=1, sticky="ew")
-        self.equipment_menu = tk.Menu(self.equipment_button, tearoff=False)
+
+        self.equipment_menu = tk.Menu(
+            self.equipment_button,
+            tearoff=False,
+        )
         self.equipment_button.configure(menu=self.equipment_menu)
+
         for name in EQUIPMENT_SELECTOR_OPTIONS:
             self.equipment_menu.add_checkbutton(
                 label=name,
                 variable=self.equipment_vars[name],
-                command=lambda item=name: self._equipment_selection_changed(item),
+                command=lambda item=name:
+                    self._equipment_selection_changed(item),
             )
-            self._equipment_menu_indices[name] = self.equipment_menu.index("end")
+            self._equipment_menu_indices[name] = (
+                self.equipment_menu.index("end")
+            )
+
         self.interactable_widgets.extend(
-            [
+            (
                 self.cb_main,
                 self.cb_main_exclusive,
                 self.cb_offhand,
@@ -592,13 +2262,19 @@ class WarriorConfigFrame(ttk.LabelFrame):
                 self.cb_off_poison,
                 self.cb_armor,
                 self.equipment_button,
-            ]
+            )
         )
 
         if self.show_house_rules:
-            house_rules = ttk.LabelFrame(self, text=" Reglas de la casa ")
-            house_rules.pack(fill="x", padx=12, pady=(0, 5))
-            black_rule = tk.Checkbutton(
+            house_rules = ttk.LabelFrame(
+                content,
+                text="Reglas de la casa",
+                style="Card.TLabelframe",
+                padding=(10, 8),
+            )
+            house_rules.pack(fill="x", pady=(0, 10))
+
+            black_rule = ttk.Checkbutton(
                 house_rules,
                 text=(
                     "regla de la casa para hacer que llevar dos armas no este tan roto "
@@ -606,12 +2282,11 @@ class WarriorConfigFrame(ttk.LabelFrame):
                     "tus armas o tus reglas ni nada en todo el juego"
                 ),
                 variable=self.house_rule_offhand_penalty,
-                anchor="w",
-                justify="left",
-                wraplength=720,
+                style="Card.TCheckbutton",
             )
-            black_rule.pack(fill="x", padx=6, pady=(3, 1))
-            red_rule = tk.Checkbutton(
+            black_rule.pack(fill="x", anchor="w", pady=(1, 4))
+
+            red_rule = ttk.Checkbutton(
                 house_rules,
                 text=(
                     "regla de la casa para hacer que llevar dos armas no este tan roto "
@@ -619,88 +2294,58 @@ class WarriorConfigFrame(ttk.LabelFrame):
                     "tus armas o tus reglas ni nada en todo el juego"
                 ),
                 variable=self.house_rule_dual_penalty,
-                foreground="#c62828",
-                activeforeground="#c62828",
-                anchor="w",
-                justify="left",
-                wraplength=720,
+                style="Card.TCheckbutton",
             )
-            red_rule.pack(fill="x", padx=6, pady=(1, 3))
+            red_rule.pack(fill="x", anchor="w", pady=(4, 1))
+
             self.interactable_widgets.extend((black_rule, red_rule))
 
-        ttk.Separator(
-            self,
-            orient="horizontal",
-        ).pack(
-            fill="x",
-            pady=5,
-        )
+        # -------------------------------------------------------------
+        # Habilidades
+        # -------------------------------------------------------------
+        skills_section = ttk.Frame(content)
+        skills_section.pack(fill="x")
 
         ttk.Label(
-            self,
+            skills_section,
             text="Habilidades Base",
-            font=("Arial", 10, "bold"),
-        ).pack(
-            pady=(5, 2)
+            style="Section.TLabel",
+        ).pack(anchor="w", pady=(0, 4))
+
+        initial_skills = set(
+            GENERAL_SKILL_DESCRIPTIONS
+        ).intersection(self.skills)
+
+        self.skill_canvas = SkillChecklistCanvas(
+            skills_section,
+            variables=self.skills,
+            descriptions=self.skill_descriptions,
+            categories=self.skill_categories,
+            allowed_skills=initial_skills,
+        )
+        self.skill_canvas.pack(
+            fill="x",
+        )
+        self.interactable_widgets.append(
+            self.skill_canvas
         )
 
-        skill_frame = ttk.Frame(self)
-        self.skill_frame = skill_frame
+        traits = ttk.Frame(skills_section)
+        traits.pack(fill="x", pady=(5, 0))
 
-        skill_frame.pack(
-            pady=2
-        )
-
-        self.skill_column_frames = {}
-        for column, category in enumerate(CATEGORY_ORDER):
-            skill_frame.columnconfigure(column, weight=1, uniform="skill_categories")
-            category_frame = ttk.LabelFrame(
-                skill_frame, text=f" {CATEGORY_LABELS[category]} "
-            )
-            category_frame.grid(row=0, column=column, sticky="nsew", padx=1)
-            self.skill_column_frames[category] = category_frame
-
-        for sk in self.skills:
-            category = self.skill_categories.get(sk, "special")
-
-            chk = ttk.Checkbutton(
-                self.skill_column_frames[category],
-                text=sk,
-                variable=self.skills[sk],
-            )
-
-            chk.pack(
-                anchor="w",
-                padx=3,
-                pady=1,
-            )
-
-            ToolTip(
-                chk,
-                self.skill_descriptions.get(
-                    sk,
-                    "Sin descripción",
-                ),
-            )
-
-            self.interactable_widgets.append(
-                chk
-            )
-            self.skill_widgets[sk] = chk
-
-        traits = ttk.Frame(self)
-        traits.pack(pady=(2, 4))
         unholy = ttk.Checkbutton(
             traits,
             text="No muerto o Poseído",
             variable=self.undead_or_possessed,
         )
-        unholy.pack(side="left", padx=7)
+        unholy.pack(anchor="center")
+
         ToolTip(
             unholy,
             "Activa reglas condicionales como el +1 para herir del Martillo Sigmarita.",
         )
         self.interactable_widgets.append(unholy)
+
 
     def set_option_filter(self, profile=None, extra_skills=()):
         """Limita los controles a las opciones modeladas y legales del perfil."""
@@ -755,14 +2400,11 @@ class WarriorConfigFrame(ttk.LabelFrame):
         self.cb_main_poison.config(values=poison_values)
         self.cb_off_poison.config(values=poison_values)
 
-        visible = [skill for skill in self.skills if skill in skill_allowed]
-        for widget in self.skill_widgets.values():
-            widget.pack_forget()
-        for skill in visible:
-            self.skill_widgets[skill].pack(anchor="w", padx=3, pady=1)
         for skill, variable in self.skills.items():
             if skill not in skill_allowed:
                 variable.set(False)
+
+        self.skill_canvas.set_allowed_skills(skill_allowed)
 
         if self._selected_main_weapon() not in self._allowed_main:
             replacement = next(iter(main_allowed), "Daga")
@@ -962,6 +2604,7 @@ class WarriorConfigFrame(ttk.LabelFrame):
                 self.cb_off_poison.config(state="disabled")
             else:
                 self.cb_off_poison.config(state="readonly")
+
     def get_config_dict(self):
 
         result = {}
@@ -1058,9 +2701,17 @@ class WarriorConfigFrame(ttk.LabelFrame):
 
 
 class EnemyProfileEditor(ttk.Frame):
-    """Editor completo de un rival manual, materializado solo cuando se ve."""
+    """Editor completo del rival manual, creado solo cuando es visible."""
 
-    def __init__(self, parent, bands, initial=None, on_name_change=None):
+    def __init__(
+        self,
+        parent,
+        bands,
+        initial=None,
+        on_name_change=None,
+        skill_descriptions=None,
+        skill_categories=None,
+    ):
         super().__init__(parent)
         self.bands = bands
         self.band_by_name = {band.name: band for band in bands}
@@ -1074,40 +2725,67 @@ class EnemyProfileEditor(ttk.Frame):
         selector.pack(fill="x", padx=8, pady=(5, 2))
         for column in (1, 3, 5):
             selector.columnconfigure(column, weight=1)
+
         ttk.Label(selector, text="Nombre:").grid(row=0, column=0, padx=(0, 3))
         name_entry = ttk.Entry(selector, textvariable=self.name)
         name_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+
         ttk.Label(selector, text="Banda:").grid(row=0, column=2, padx=(0, 3))
         self.band_combo = ttk.Combobox(
-            selector, state="readonly",
+            selector,
+            state="readonly",
             values=("Selección libre", *(band.name for band in bands)),
         )
         self.band_combo.grid(row=0, column=3, sticky="ew", padx=(0, 8))
+
         ttk.Label(selector, text="Guerrero:").grid(row=0, column=4, padx=(0, 3))
         self.profile_combo = ttk.Combobox(selector, state="disabled")
         self.profile_combo.grid(row=0, column=5, sticky="ew")
-        ttk.Label(selector, textvariable=self.status, font=("Arial", 8, "italic")).grid(
-            row=1, column=0, columnspan=6, sticky="w", pady=(3, 0)
+
+        ttk.Label(
+            selector,
+            textvariable=self.status,
+            style="Muted.TLabel",
+        ).grid(
+            row=1,
+            column=0,
+            columnspan=6,
+            sticky="w",
+            pady=(3, 0),
         )
+
         self.band_combo.bind("<<ComboboxSelected>>", self._band_changed)
         self.profile_combo.bind("<<ComboboxSelected>>", self._profile_changed)
         self.name.trace_add("write", self._name_changed)
 
-        descriptions = dict(GENERAL_SKILL_DESCRIPTIONS)
-        categories = dict(GENERAL_SKILL_CATEGORIES)
-        for band in bands:
-            descriptions.update((skill.name, skill.description) for skill in band.skills)
-            for skill in band.skills:
-                categories.setdefault(skill.name, "special")
+        if skill_descriptions is None or skill_categories is None:
+            descriptions = dict(GENERAL_SKILL_DESCRIPTIONS)
+            categories = dict(GENERAL_SKILL_CATEGORIES)
+
+            for band in bands:
+                descriptions.update(
+                    (skill.name, skill.description)
+                    for skill in band.skills
+                )
+                for skill in band.skills:
+                    categories.setdefault(skill.name, "special")
+        else:
+            descriptions = skill_descriptions
+            categories = skill_categories
+
         self.config = WarriorConfigFrame(
-            self, "Configuración del enemigo", skill_descriptions=descriptions,
+            self,
+            "Configuración del enemigo",
+            skill_descriptions=descriptions,
             skill_categories=categories,
         )
-        self.config.pack(fill="both", expand=True, padx=5, pady=(2, 5))
+        self.config.pack(fill="both", expand=True, padx=0, pady=(2, 5))
         self.config.set_option_filter(None)
         self.band_combo.set("Selección libre")
+
         if initial:
             self.load_config(initial)
+
 
     def _name_changed(self, *_args):
         if self.on_name_change:
@@ -1203,33 +2881,506 @@ class EnemyProfileEditor(ttk.Frame):
 
 class TrollheimApp(tk.Tk):
 
+    def _configure_styles(self):
+        # Configure the visual language of the application.
+        style = ttk.Style(self)
+
+        # Native Windows themes ignore many colour settings.
+        style.theme_use("clam")
+
+        self.configure(background=COLORS["bg"])
+
+        default_font = ("Segoe UI", 10)
+        small_font = ("Segoe UI", 9)
+        section_font = ("Segoe UI Semibold", 11)
+        heading_font = ("Segoe UI Semibold", 15)
+        title_font = ("Segoe UI Semibold", 18)
+
+        self.option_add("*Font", default_font)
+        self.option_add("*Menu.Font", default_font)
+        self.option_add("*Menu.background", COLORS["surface_alt"])
+        self.option_add("*Menu.foreground", COLORS["text"])
+        self.option_add("*Menu.activeBackground", COLORS["accent"])
+        self.option_add("*Menu.activeForeground", "#111111")
+        self.option_add("*Menu.borderWidth", 0)
+        self.option_add("*TCombobox*Listbox.background", COLORS["surface_alt"])
+        self.option_add("*TCombobox*Listbox.foreground", COLORS["text"])
+        self.option_add("*TCombobox*Listbox.selectBackground", COLORS["accent"])
+        self.option_add("*TCombobox*Listbox.selectForeground", "#111111")
+        self.option_add("*TCombobox*Listbox.font", default_font)
+
+        style.configure(
+            ".",
+            background=COLORS["bg"],
+            foreground=COLORS["text"],
+            fieldbackground=COLORS["surface"],
+            bordercolor=COLORS["border"],
+            darkcolor=COLORS["border"],
+            lightcolor=COLORS["border"],
+            troughcolor=COLORS["surface"],
+            focuscolor=COLORS["accent"],
+            font=default_font,
+        )
+
+        style.configure("TFrame", background=COLORS["bg"])
+        style.configure("Card.TFrame", background=COLORS["surface"], relief="flat")
+
+        style.configure(
+            "Card.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+        )
+        style.configure(
+            "Card.Muted.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text_muted"],
+        )
+        style.configure(
+            "Card.Section.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+            font=("Segoe UI Semibold", 11),
+        )
+
+        style.configure(
+            "Card.TCheckbutton",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+            padding=(2, 3),
+        )
+        style.map(
+            "Card.TCheckbutton",
+            background=[("active", COLORS["surface"])],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "TMenubutton",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            padding=(10, 6),
+            relief="flat",
+        )
+        style.map(
+            "TMenubutton",
+            background=[
+                ("active", COLORS["surface_hover"]),
+                ("pressed", COLORS["surface_hover"]),
+                ("disabled", COLORS["surface"]),
+            ],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "Card.TMenubutton",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            padding=(10, 6),
+            relief="flat",
+        )
+        style.map(
+            "Card.TMenubutton",
+            background=[
+                ("active", COLORS["surface_hover"]),
+                ("pressed", COLORS["surface_hover"]),
+                ("disabled", COLORS["surface"]),
+            ],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "Stat.TButton",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            padding=(5, 4),
+            relief="flat",
+        )
+        style.map(
+            "Stat.TButton",
+            background=[
+                ("active", COLORS["surface_hover"]),
+                ("pressed", COLORS["accent_pressed"]),
+            ],
+            foreground=[("pressed", "#111111")],
+        )
+
+        style.configure(
+            "Stat.TEntry",
+            fieldbackground=COLORS["bg"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            insertcolor=COLORS["text"],
+            padding=(4, 5),
+        )
+        style.map(
+            "Stat.TEntry",
+            bordercolor=[("focus", COLORS["accent"])],
+        )
+
+        style.configure(
+            "TLabel",
+            background=COLORS["bg"],
+            foreground=COLORS["text"],
+        )
+        style.configure("Muted.TLabel", foreground=COLORS["text_muted"])
+        style.configure("Title.TLabel", font=title_font, foreground=COLORS["text"])
+        style.configure("Heading.TLabel", font=heading_font, foreground=COLORS["text"])
+        style.configure("Section.TLabel", font=section_font, foreground=COLORS["text"])
+        style.configure("TSeparator", background=COLORS["border"])
+
+        style.configure(
+            "TButton",
+            padding=(12, 7),
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            borderwidth=1,
+            relief="flat",
+        )
+        style.map(
+            "TButton",
+            background=[
+                ("pressed", COLORS["surface_hover"]),
+                ("active", COLORS["surface_hover"]),
+                ("disabled", COLORS["surface"]),
+            ],
+            foreground=[("disabled", COLORS["text_disabled"])],
+            bordercolor=[
+                ("focus", COLORS["accent"]),
+                ("active", COLORS["border_light"]),
+            ],
+        )
+
+        style.configure(
+            "Accent.TButton",
+            background=COLORS["accent"],
+            foreground="#111111",
+            bordercolor=COLORS["accent"],
+            font=("Segoe UI Semibold", 10),
+            padding=(16, 8),
+        )
+        style.map(
+            "Accent.TButton",
+            background=[
+                ("pressed", COLORS["accent_pressed"]),
+                ("active", COLORS["accent_hover"]),
+                ("disabled", COLORS["surface_alt"]),
+            ],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "Danger.TButton",
+            background=COLORS["danger"],
+            foreground="#FFFFFF",
+            bordercolor=COLORS["danger"],
+            font=("Segoe UI Semibold", 10),
+            padding=(16, 8),
+        )
+        style.map(
+            "Danger.TButton",
+            background=[
+                ("active", COLORS["danger_hover"]),
+                ("pressed", COLORS["danger"]),
+            ],
+        )
+
+        style.configure(
+            "TEntry",
+            fieldbackground=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            insertcolor=COLORS["text"],
+            padding=(7, 6),
+        )
+        style.map("TEntry", bordercolor=[("focus", COLORS["accent"])])
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=COLORS["surface_alt"],
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            arrowcolor=COLORS["text_muted"],
+            bordercolor=COLORS["border"],
+            padding=(6, 5),
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", COLORS["surface_alt"]),
+                ("disabled", COLORS["surface"]),
+            ],
+            foreground=[
+                ("readonly", COLORS["text"]),
+                ("disabled", COLORS["text_disabled"]),
+            ],
+            selectbackground=[("readonly", COLORS["surface_alt"])],
+            selectforeground=[("readonly", COLORS["text"])],
+            bordercolor=[("focus", COLORS["accent"])],
+        )
+
+        style.configure(
+            "TSpinbox",
+            fieldbackground=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            arrowcolor=COLORS["text_muted"],
+            bordercolor=COLORS["border"],
+            padding=(5, 5),
+        )
+
+        style.configure(
+            "TCheckbutton",
+            background=COLORS["bg"],
+            foreground=COLORS["text"],
+            padding=(2, 3),
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", COLORS["bg"])],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "TRadiobutton",
+            background=COLORS["bg"],
+            foreground=COLORS["text"],
+            padding=(2, 3),
+        )
+        style.map(
+            "TRadiobutton",
+            background=[("active", COLORS["bg"])],
+            foreground=[("disabled", COLORS["text_disabled"])],
+        )
+
+        style.configure(
+            "TLabelframe",
+            background=COLORS["bg"],
+            bordercolor=COLORS["border"],
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=COLORS["bg"],
+            foreground=COLORS["text_muted"],
+            font=small_font,
+        )
+
+        style.configure(
+            "Card.TLabelframe",
+            background=COLORS["surface"],
+            bordercolor=COLORS["border"],
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "Card.TLabelframe.Label",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+            font=section_font,
+        )
+
+        style.configure(
+            "TNotebook",
+            background=COLORS["bg"],
+            borderwidth=0,
+            tabmargins=(12, 6, 12, 0),
+        )
+        style.configure(
+            "TNotebook.Tab",
+            background=COLORS["bg"],
+            foreground=COLORS["text_muted"],
+            borderwidth=0,
+            padding=(15, 9),
+            font=("Segoe UI Semibold", 8),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[
+                ("selected", COLORS["surface"]),
+                ("active", COLORS["surface_alt"]),
+            ],
+            foreground=[
+                ("selected", COLORS["accent"]),
+                ("active", COLORS["text"]),
+            ],
+        )
+
+        style.configure(
+            "Treeview",
+            background=COLORS["surface"],
+            fieldbackground=COLORS["surface"],
+            foreground=COLORS["text"],
+            bordercolor=COLORS["border"],
+            borderwidth=0,
+            rowheight=30,
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", COLORS["selection"])],
+            foreground=[("selected", COLORS["text"])],
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text_muted"],
+            bordercolor=COLORS["border"],
+            relief="flat",
+            font=("Segoe UI Semibold", 9),
+            padding=(6, 8),
+        )
+        style.map(
+            "Treeview.Heading",
+            background=[("active", COLORS["surface_hover"])],
+            foreground=[("active", COLORS["text"])],
+        )
+
+        for scrollbar_style in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
+            style.configure(
+                scrollbar_style,
+                background=COLORS["surface_alt"],
+                troughcolor=COLORS["bg"],
+                bordercolor=COLORS["bg"],
+                arrowcolor=COLORS["text_muted"],
+            )
+
+
+        style.configure(
+            "AnalysisTitle.TLabel",
+            background=COLORS["bg"],
+            foreground=COLORS["text"],
+            font=("Segoe UI Semibold", 12),
+        )
+        style.configure(
+            "AnalysisSubtitle.TLabel",
+            background=COLORS["bg"],
+            foreground=COLORS["text_muted"],
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "AnalysisCardTitle.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+            font=("Segoe UI Semibold", 10),
+        )
+        style.configure(
+            "AnalysisStatus.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text_muted"],
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "ModeValue.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["text"],
+            font=("Segoe UI Semibold", 15),
+        )
+        style.configure(
+            "AnalysisPanel.TLabelframe",
+            background=COLORS["bg"],
+            bordercolor=COLORS["border"],
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "AnalysisPanel.TLabelframe.Label",
+            background=COLORS["bg"],
+            foreground=COLORS["text_muted"],
+            font=("Segoe UI Semibold", 9),
+        )
+
+
+        style.configure(
+            "Analysis.Horizontal.TProgressbar",
+            background=COLORS["accent"],
+            troughcolor=COLORS["surface_alt"],
+            bordercolor=COLORS["surface_alt"],
+            borderwidth=0,
+            thickness=34,
+        )
+
+        style.configure(
+            "Horizontal.TProgressbar",
+            background=COLORS["accent"],
+            troughcolor=COLORS["surface_alt"],
+            bordercolor=COLORS["surface_alt"],
+            borderwidth=0,
+            thickness=7,
+        )
+
     def __init__(self):
 
         super().__init__()
+
+        self._configure_styles()
 
         self.title(
             "Trollheim Combat Simulator - Optimizado"
         )
 
-        book_toolbar = ttk.Frame(self, padding=(10, 6))
-        book_toolbar.pack(fill="x")
-        ttk.Label(book_toolbar, text="Libro de simulación", font=("Arial", 9, "bold")).pack(
-            side="left"
+        header = ttk.Frame(self, padding=(20, 14, 20, 10))
+        header.pack(fill="x")
+
+        branding = ttk.Frame(header)
+        branding.pack(side="left")
+
+        ttk.Label(
+            branding,
+            text="Trollheim Combat Simulator - Optimizado",
+            style="Title.TLabel",
+        ).pack(anchor="w")
+
+        ttk.Label(
+            branding,
+            text="Libro de simulación",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(1, 0))
+
+        actions = ttk.Frame(header)
+        actions.pack(side="right")
+
+        import_button = ttk.Menubutton(actions, text="Cargar ▾")
+        import_menu = tk.Menu(import_button, tearoff=False)
+        import_menu.add_command(
+            label="Cargar Candidato",
+            command=self._load_candidate_only,
         )
-        book_actions = (
-            ("Guardar", self._save_candidate,
-             "Guarda el candidato, los enemigos y todas las simulaciones calculadas en un libro de Excel."),
-            ("Cargar", self._load_candidate,
-             "Carga el candidato, los enemigos y las simulaciones guardadas en un libro de Excel."),
-            ("Cargar Candidato", self._load_candidate_only,
-             "Carga únicamente el candidato del libro y reemplaza el candidato actual."),
-            ("Cargar Enemigos", self._load_enemies_only,
-             "Carga únicamente los enemigos, reemplaza los actuales y activa el modo Rival configurable."),
+        import_menu.add_command(
+            label="Cargar Enemigos",
+            command=self._load_enemies_only,
         )
-        for text, command, tooltip in reversed(book_actions):
-            button = ttk.Button(book_toolbar, text=text, command=command)
-            button.pack(side="right", padx=(6, 0))
-            ToolTip(button, tooltip)
+        import_button.configure(menu=import_menu)
+        import_button.pack(side="left", padx=(0, 6))
+        ToolTip(
+            import_button,
+            "Carga únicamente el candidato o los enemigos configurados desde un libro.",
+        )
+
+        load_button = ttk.Button(
+            actions,
+            text="Cargar",
+            command=self._load_candidate,
+        )
+        load_button.pack(side="left", padx=(0, 6))
+        ToolTip(
+            load_button,
+            "Carga el candidato, los enemigos y las simulaciones guardadas en un libro de Excel.",
+        )
+
+        save_button = ttk.Button(
+            actions,
+            text="Guardar",
+            command=self._save_candidate,
+            style="Accent.TButton",
+        )
+        save_button.pack(side="left")
+        ToolTip(
+            save_button,
+            "Guarda el candidato, los enemigos y todas las simulaciones calculadas en un libro de Excel.",
+        )
 
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill="both", expand=True)
@@ -1287,13 +3438,43 @@ class TrollheimApp(tk.Tk):
         self.candidate_name = tk.StringVar(value="Candidato")
         self.candidate_band_id = tk.StringVar(value="")
         self.candidate_profile_id = tk.StringVar(value="")
-        self.candidate_catalog_status = tk.StringVar(value="Selección libre: todas las opciones del simulador.")
+        self.candidate_catalog_status = tk.StringVar(
+            value="Selección libre: todas las opciones del simulador."
+        )
         self.house_rule_vars = {
             key: tk.BooleanVar(value=False) for key in HOUSE_RULES
         }
         self.candidate_workbook_path = None
         self._candidate_bands = load_bands()
-        self._band_by_name = {band.name: band for band in self._candidate_bands}
+        self._band_by_name = {
+            band.name: band
+            for band in self._candidate_bands
+        }
+
+        # Catálogos inmutables reutilizados al reconstruir Candidato o Enemigo.
+        self._warrior_skill_descriptions = dict(
+            GENERAL_SKILL_DESCRIPTIONS
+        )
+        self._warrior_skill_categories = dict(
+            GENERAL_SKILL_CATEGORIES
+        )
+
+        for band in self._candidate_bands:
+            self._warrior_skill_descriptions.update(
+                (skill.name, skill.description)
+                for skill in band.skills
+            )
+            for skill in band.skills:
+                self._warrior_skill_categories.setdefault(
+                    skill.name,
+                    "special",
+                )
+
+        self._rule_tooltip_descriptions = (
+            self._build_rule_tooltip_descriptions()
+        )
+        self._rule_tooltip_cache = {}
+
         self._warrior_snapshots = {}
         self._enemy_profiles = []
         self._active_enemy_editor_index = None
@@ -1310,6 +3491,7 @@ class TrollheimApp(tk.Tk):
         )
         self._lazy_tabs = {}
         self._built_tabs = set()
+
         for key, title, builder in tab_specs:
             tab = ttk.Frame(self.notebook)
             self.notebook.add(tab, text=title)
@@ -1321,82 +3503,100 @@ class TrollheimApp(tk.Tk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         width = min(1280, max(900, screen_width - 100))
-        height = min(1000, max(650, screen_height - 80))
+        height = min(1050, max(700, screen_height - 30))
         x = max(0, (screen_width - width) // 2)
         y = max(0, (screen_height - height) // 2)
-        self.minsize(900, 650)
+        self.minsize(900, 700)
         self.geometry(f"{width}x{height}+{x}+{y}")
+
+        self._initialize_window_move_throttle()
 
     def _build_lazy_tab(self, requested_key):
         if requested_key in self._built_tabs:
             return
+
         for key, tab, builder in self._lazy_tabs.values():
-            if key == requested_key:
-                self._built_tabs.add(key)
-                builder(tab)
+            if key != requested_key:
+                continue
+
+            self._built_tabs.add(key)
+            builder(tab)
+
+            # La ayuda contextual automática solo aporta valor en las tablas.
+            # Candidato y Enemigo ya añaden sus tooltips específicos al crear controles.
+            if requested_key in {"combos", "weapons", "equipment"}:
                 self._install_context_help(tab)
-                self.after_idle(
-                    lambda current_tab=tab: self._install_context_help(current_tab)
-                )
-                return
+
+            return
 
     def _install_context_help(self, root):
-        """Añade ayuda básica a los controles que no tengan una específica."""
-        for widget in (root, *self._widget_descendants(root)):
+        """Instala solo ayuda contextual que aporta información adicional."""
+        for widget in self._widget_descendants(root):
             if getattr(widget, "_tooltip_attached", False):
                 continue
+
             if isinstance(widget, ttk.Treeview):
                 TreeviewToolTip(
-                    widget, self._tree_help_explanations(),
+                    widget,
+                    self._tree_help_explanations(),
                     self._rule_tooltip_for_value,
                 )
-                continue
-            text = ""
-            try:
-                text = str(widget.cget("text")).strip()
-            except (tk.TclError, AttributeError):
-                pass
-            help_text = None
-            if isinstance(widget, (ttk.Button, tk.Button)):
-                help_text = f"Ejecuta la acción «{text}»."
-            elif isinstance(widget, (ttk.Menubutton, tk.Menubutton)):
-                help_text = f"Abre las opciones de «{text.rstrip(' ▾')}»."
-            elif isinstance(widget, ttk.Combobox):
-                help_text = lambda control=widget: (
-                    f"Selección actual: {control.get() or 'ninguna'}. Abre la lista para cambiarla."
-                )
-            elif isinstance(widget, (ttk.Entry, tk.Entry)):
-                help_text = "Campo editable. Haz clic para introducir o modificar el valor."
-            elif isinstance(widget, (ttk.Checkbutton, tk.Checkbutton)):
-                help_text = f"Activa o desactiva «{text}»."
-            elif isinstance(widget, (ttk.Radiobutton, tk.Radiobutton)):
-                help_text = f"Selecciona la opción «{text}»."
-            elif isinstance(widget, ttk.Progressbar):
-                help_text = "Muestra el progreso de la operación en curso."
-            elif isinstance(widget, (ttk.Label, tk.Label)):
-                if text:
-                    help_text = text
-                else:
-                    try:
-                        variable_name = widget.cget("textvariable")
-                    except tk.TclError:
-                        variable_name = ""
-                    if variable_name:
-                        help_text = lambda control=widget, name=variable_name: str(
-                            control.getvar(name)
-                        )
-            if help_text:
-                ToolTip(widget, help_text)
 
     @staticmethod
     def _widget_descendants(root):
+        """Devuelve descendientes sin usar la cola O(n²) basada en pop(0)."""
         descendants = []
         pending = list(root.winfo_children())
+
         while pending:
-            widget = pending.pop(0)
+            widget = pending.pop()
             descendants.append(widget)
             pending.extend(widget.winfo_children())
+
         return descendants
+
+    def _initialize_window_move_throttle(self):
+        """Reduce eventos Configure redundantes al mover la ventana en Windows."""
+        if WINDOW_MOVE_THROTTLE_MS <= 0:
+            return
+
+        self._window_move_throttle_geometry = None
+        self.bind(
+            "<Configure>",
+            self._throttle_window_move,
+            add="+",
+        )
+
+    def _throttle_window_move(self, event):
+        """Retrasa solo movimiento puro de la ventana; nunca el redimensionado."""
+        if event.widget is not self:
+            return
+
+        geometry = (
+            int(event.x),
+            int(event.y),
+            int(event.width),
+            int(event.height),
+        )
+
+        previous = self._window_move_throttle_geometry
+        self._window_move_throttle_geometry = geometry
+
+        if previous is None:
+            return
+
+        throttle_ms = WINDOW_MOVE_THROTTLE_MS
+
+        if throttle_ms <= 0:
+            return
+
+        moved = geometry[:2] != previous[:2]
+        resized = geometry[2:] != previous[2:]
+
+        if moved and not resized:
+            time.sleep(
+                throttle_ms / 1000.0
+            )
 
     @staticmethod
     def _tree_help_explanations():
@@ -1420,11 +3620,8 @@ class TrollheimApp(tk.Tk):
             "Off": "Arma secundaria, escudo, rodela o mano libre.",
         }
 
-    def _rule_tooltip_for_value(self, value):
-        """Busca las reglas de los objetos o habilidades escritos en una celda."""
-        text = str(value).replace("★", "").strip()
-        if not text or re.search(r"\d+(?:[.,]\d+)?%", text):
-            return ""
+    def _build_rule_tooltip_descriptions(self):
+        """Construye una sola vez el catálogo inmutable de descripciones."""
         descriptions = {}
         descriptions.update(weapon_descriptions())
         descriptions.update(armour_descriptions())
@@ -1432,10 +3629,13 @@ class TrollheimApp(tk.Tk):
         descriptions.update(SKILL_DESCRIPTIONS)
         descriptions.update(PREPARATION_DESCRIPTIONS)
         descriptions.update(POISON_DESCRIPTIONS)
+
         for band in self._candidate_bands:
             descriptions.update(
-                (skill.name, skill.description) for skill in band.skills
+                (skill.name, skill.description)
+                for skill in band.skills
             )
+
         descriptions.update({
             "Escudo": "Mejora en 1 la tirada de salvación por armadura.",
             "Rodela": "Permite parar; con una espada puede repetir una parada fallida.",
@@ -1444,25 +3644,58 @@ class TrollheimApp(tk.Tk):
             "Ninguna": "La mano está vacía.",
             "Sin armas": "Combate desarmado: -1 Fuerza y el rival mejora su salvación en 1.",
         })
+
+        return descriptions
+
+    def _rule_tooltip_for_value(self, value):
+        """Busca reglas de objetos o habilidades escritos en una celda."""
+        text = str(value).replace("★", "").strip()
+
+        if text in self._rule_tooltip_cache:
+            return self._rule_tooltip_cache[text]
+
+        if not text or re.search(r"\d+(?:[.,]\d+)?%", text):
+            self._rule_tooltip_cache[text] = ""
+            return ""
+
+        descriptions = self._rule_tooltip_descriptions
+
         normalized = re.sub(
             r"\s+\((?:Sin material|Normal|Gromril|Ithilmar|Obsidiana|Acero Oscuro)\)",
-            "", text,
+            "",
+            text,
         )
+
         if normalized in descriptions:
-            return descriptions[normalized]
+            result = descriptions[normalized]
+            self._rule_tooltip_cache[text] = result
+            return result
+
         matches = [
-            (name, description) for name, description in descriptions.items()
+            (name, description)
+            for name, description in descriptions.items()
             if name not in {"Ninguna"} and name in normalized
         ]
-        matches.sort(key=lambda pair: len(pair[0]), reverse=True)
+        matches.sort(
+            key=lambda pair: len(pair[0]),
+            reverse=True,
+        )
+
         seen = set()
         lines = []
+
         for name, description in matches:
-            if name in seen or any(name in selected for selected in seen):
+            if name in seen or any(
+                name in selected for selected in seen
+            ):
                 continue
+
             seen.add(name)
             lines.append(f"{name}: {description}")
-        return "\n".join(lines[:3])
+
+        result = "\n".join(lines[:3])
+        self._rule_tooltip_cache[text] = result
+        return result
 
     def _on_tab_changed(self, _event=None):
         if self._tab_transitioning:
@@ -1540,32 +3773,92 @@ class TrollheimApp(tk.Tk):
             variable.set(bool(values.get(key, False)))
 
     def setup_tab_house_rules(self, tab):
-        heading = ttk.Frame(tab, padding=(18, 15, 18, 8))
+        heading = ttk.Frame(
+            tab,
+            padding=(20, 14, 20, 8),
+        )
         heading.pack(fill="x")
+
         ttk.Label(
-            heading, text="Reglas de la casa", font=("Arial", 15, "bold")
+            heading,
+            text="Reglas de la casa",
+            style="AnalysisTitle.TLabel",
         ).pack(anchor="w")
+
         ttk.Label(
             heading,
             text=(
                 "Marca las reglas que se aplicarán globalmente al candidato, a "
                 "todos los enemigos y a los análisis de coste."
             ),
-            wraplength=920,
-        ).pack(anchor="w", pady=(4, 0))
+            style="AnalysisSubtitle.TLabel",
+            wraplength=980,
+        ).pack(
+            anchor="w",
+            pady=(3, 0),
+        )
 
-        rules_frame = ttk.Frame(tab, padding=(18, 4, 18, 18))
-        rules_frame.pack(fill="both", expand=True)
-        for row, (key, rule) in enumerate(HOUSE_RULES.items()):
-            card = ttk.LabelFrame(rules_frame, text=f" {rule['name']} ")
-            card.grid(row=row, column=0, sticky="ew", pady=4)
-            card.columnconfigure(1, weight=1)
-            check = ttk.Checkbutton(card, variable=self.house_rule_vars[key])
-            check.grid(row=0, column=0, padx=(10, 5), pady=9, sticky="n")
-            label = ttk.Label(card, text=rule["description"], wraplength=920)
-            label.grid(row=0, column=1, padx=(0, 12), pady=9, sticky="w")
-            ToolTip(check, f"Activa o desactiva «{rule['name']}».")
+        rules_frame = ttk.Frame(
+            tab,
+            padding=(20, 2, 20, 16),
+        )
+        rules_frame.pack(
+            fill="both",
+            expand=True,
+        )
         rules_frame.columnconfigure(0, weight=1)
+
+        for row, (key, rule) in enumerate(HOUSE_RULES.items()):
+            card = ttk.Frame(
+                rules_frame,
+                style="Card.TFrame",
+                padding=(14, 10),
+            )
+            card.grid(
+                row=row,
+                column=0,
+                sticky="ew",
+                pady=(0, 7),
+            )
+            card.columnconfigure(0, weight=1)
+
+            text_area = ttk.Frame(
+                card,
+                style="Card.TFrame",
+            )
+            text_area.grid(
+                row=0,
+                column=0,
+                sticky="ew",
+                padx=(0, 16),
+            )
+
+            ttk.Label(
+                text_area,
+                text=rule["name"],
+                style="Card.Section.TLabel",
+            ).pack(anchor="w")
+
+            ttk.Label(
+                text_area,
+                text=rule["description"],
+                style="Card.Muted.TLabel",
+                wraplength=940,
+                justify="left",
+            ).pack(
+                anchor="w",
+                pady=(3, 0),
+            )
+
+            switch = ToggleSwitch(
+                card,
+                variable=self.house_rule_vars[key],
+            )
+            switch.grid(
+                row=0,
+                column=1,
+                sticky="e",
+            )
 
     def _custom_enemies_for_simulation(self):
         if "enemy" in self._built_tabs:
@@ -1587,51 +3880,83 @@ class TrollheimApp(tk.Tk):
         selector.columnconfigure(1, weight=2)
         selector.columnconfigure(3, weight=2)
         selector.columnconfigure(5, weight=2)
-        ttk.Label(selector, text="Nombre:").grid(row=0, column=0, padx=(10, 4), pady=7)
+
+        ttk.Label(selector, text="Nombre:").grid(
+            row=0, column=0, padx=(10, 4), pady=7
+        )
         ttk.Entry(selector, textvariable=self.candidate_name).grid(
             row=0, column=1, sticky="ew", padx=(0, 10), pady=7
         )
-        ttk.Label(selector, text="Banda:").grid(row=0, column=2, padx=(0, 4), pady=7)
+
+        ttk.Label(selector, text="Banda:").grid(
+            row=0, column=2, padx=(0, 4), pady=7
+        )
         self.candidate_band_combo = ttk.Combobox(
-            selector, state="readonly",
+            selector,
+            state="readonly",
             values=("Selección libre", *(band.name for band in self._candidate_bands)),
         )
-        self.candidate_band_combo.grid(row=0, column=3, sticky="ew", padx=(0, 10), pady=7)
-        self.candidate_band_combo.bind("<<ComboboxSelected>>", self._candidate_band_changed)
-        ttk.Label(selector, text="Guerrero:").grid(row=0, column=4, padx=(0, 4), pady=7)
-        self.candidate_profile_combo = ttk.Combobox(selector, state="disabled")
-        self.candidate_profile_combo.grid(row=0, column=5, sticky="ew", padx=(0, 10), pady=7)
-        self.candidate_profile_combo.bind("<<ComboboxSelected>>", self._candidate_profile_changed)
+        self.candidate_band_combo.grid(
+            row=0, column=3, sticky="ew", padx=(0, 10), pady=7
+        )
+        self.candidate_band_combo.bind(
+            "<<ComboboxSelected>>",
+            self._candidate_band_changed,
+        )
+
+        ttk.Label(selector, text="Guerrero:").grid(
+            row=0, column=4, padx=(0, 4), pady=7
+        )
+        self.candidate_profile_combo = ttk.Combobox(
+            selector,
+            state="disabled",
+        )
+        self.candidate_profile_combo.grid(
+            row=0, column=5, sticky="ew", padx=(0, 10), pady=7
+        )
+        self.candidate_profile_combo.bind(
+            "<<ComboboxSelected>>",
+            self._candidate_profile_changed,
+        )
 
         action_frame = ttk.Frame(selector)
-        action_frame.grid(row=1, column=0, columnspan=6, sticky="ew", padx=10, pady=(0, 7))
-        ttk.Label(action_frame, textvariable=self.candidate_catalog_status).pack(side="left", fill="x", expand=True)
+        action_frame.grid(
+            row=1,
+            column=0,
+            columnspan=6,
+            sticky="ew",
+            padx=10,
+            pady=(0, 7),
+        )
+        ttk.Label(
+            action_frame,
+            textvariable=self.candidate_catalog_status,
+        ).pack(
+            side="left",
+            fill="x",
+            expand=True,
+        )
 
-        candidate_skill_descriptions = dict(GENERAL_SKILL_DESCRIPTIONS)
-        candidate_skill_categories = dict(GENERAL_SKILL_CATEGORIES)
-        for band in self._candidate_bands:
-            candidate_skill_descriptions.update(
-                (skill.name, skill.description) for skill in band.skills
-            )
-            for skill in band.skills:
-                candidate_skill_categories.setdefault(skill.name, "special")
         self.candidate_config = WarriorConfigFrame(
             tab,
             "Configuración del Guerrero Candidato",
             show_house_rules=False,
-            skill_descriptions=candidate_skill_descriptions,
-            skill_categories=candidate_skill_categories,
+            skill_descriptions=self._warrior_skill_descriptions,
+            skill_categories=self._warrior_skill_categories,
         )
 
         self.candidate_config.pack(
             fill="both",
             expand=True,
-            padx=15,
+            padx=5,
             pady=(3, 12),
         )
         self.candidate_config.set_option_filter(None)
+
         if "candidate" in self._warrior_snapshots:
-            self._restore_candidate_payload(self._warrior_snapshots["candidate"])
+            self._restore_candidate_payload(
+                self._warrior_snapshots["candidate"]
+            )
         else:
             self.candidate_band_combo.set("Selección libre")
 
@@ -2191,25 +4516,36 @@ class TrollheimApp(tk.Tk):
 
     def _materialize_selected_enemy(self):
         self._enemy_materialize_after_id = None
+
         if not hasattr(self, "enemy_notebook") or not self.enemy_notebook.tabs():
             return
+
         selected = self.enemy_notebook.select()
         index = self.enemy_notebook.index(selected)
+
         if index == self._active_enemy_editor_index and self._enemy_editor_exists():
             return
+
         self._save_active_enemy_editor()
+
         if self._enemy_editor_exists():
             self.enemy_editor.destroy()
+
         page = self.nametowidget(selected)
         self._active_enemy_editor_index = index
+
         self.enemy_editor = EnemyProfileEditor(
-            page, self._candidate_bands, self._enemy_profiles[index],
-            on_name_change=lambda name, page_id=selected: self.enemy_notebook.tab(page_id, text=name),
+            page,
+            self._candidate_bands,
+            self._enemy_profiles[index],
+            on_name_change=lambda name, page_id=selected:
+                self.enemy_notebook.tab(page_id, text=name),
+            skill_descriptions=self._warrior_skill_descriptions,
+            skill_categories=self._warrior_skill_categories,
         )
         self.enemy_editor.pack(fill="both", expand=True)
         self.enemy_config = self.enemy_editor.config  # Compatibilidad con controles comunes.
         self.enemy_editor.set_enabled(self.enemy_mode.get() == "custom")
-        self._install_context_help(page)
 
     def _enemy_tab_changed(self, _event=None):
         self._materialize_selected_enemy()
@@ -2349,47 +4685,105 @@ class TrollheimApp(tk.Tk):
         return frame
 
     def _create_mode_cards(self, parent, target):
-        section = ttk.LabelFrame(parent, text="CONFIGURACIONES DE MANOS")
-        section.pack(fill="x", padx=10, pady=(8, 4))
+        """Resumen en una sola línea: equipo, resultado, delta e interruptor."""
+        section = ttk.Frame(
+            parent,
+            padding=(20, 2, 20, 1),
+        )
+        section.pack(fill="x")
+
+        title_row = ttk.Frame(section)
+        title_row.pack(fill="x")
+
+        ttk.Label(
+            title_row,
+            text="CONFIGURACIONES DE MANOS",
+            style="Section.TLabel",
+        ).pack(side="left")
+
         help_text = (
             "Compara el rendimiento de las distintas configuraciones de manos. "
             "Activa o desactiva cada interruptor para mostrar u ocultar su columna en la tabla."
         )
-        ToolTip(section, help_text)
 
         container = ttk.Frame(section)
-        container.pack(fill="x", padx=4, pady=4)
+        container.pack(
+            fill="x",
+            pady=(3, 2),
+        )
+
         cards = {}
 
-        for column, (mode, title) in enumerate(COMBAT_MODES):
-            container.columnconfigure(column, weight=1, uniform="mode_cards")
-            card = ttk.Frame(container, relief="groove", borderwidth=1)
-            card.grid(row=0, column=column, sticky="nsew", padx=3)
-            header = ttk.Frame(card)
-            header.pack(fill="x", padx=6, pady=(4, 1))
-            ttk.Label(header, text=title, font=("Arial", 9, "bold")).pack(side="left")
-            shown = tk.BooleanVar(value=True)
-            toggle = ttk.Checkbutton(
-                header,
-                text="Mostrar",
-                variable=shown,
-                command=lambda m=mode, t=target: self._toggle_mode_column(t, m),
+        for column, (mode, _title) in enumerate(COMBAT_MODES):
+            container.columnconfigure(
+                column,
+                weight=1,
+                uniform="mode_cards",
             )
-            toggle.pack(side="right")
+
+            card = ttk.Frame(
+                container,
+                style="Card.TFrame",
+                padding=(8, 6),
+            )
+            card.grid(
+                row=0,
+                column=column,
+                sticky="nsew",
+                padx=(0 if column == 0 else 3, 0),
+            )
+            card.columnconfigure(0, weight=1)
+
+            shown = tk.BooleanVar(value=True)
+
             equipment = ttk.Label(
                 card,
                 text="Equipo por calcular",
-                anchor="center",
-                justify="center",
-                wraplength=210,
+                style="Card.Section.TLabel",
+                anchor="w",
             )
-            equipment.pack(fill="x", padx=6, pady=(5, 1))
-            rate_line = ttk.Frame(card)
-            rate_line.pack(anchor="center", padx=6, pady=1)
-            rate = ttk.Label(rate_line, text="Sin resultados", font=("Arial", 13, "bold"))
-            rate.pack(side="left")
-            delta = ttk.Label(rate_line, text="", font=("Arial", 10, "bold"))
-            delta.pack(side="left", padx=(5, 0))
+            equipment.grid(
+                row=0,
+                column=0,
+                sticky="ew",
+            )
+
+            rate = ttk.Label(
+                card,
+                text="Sin resultados",
+                style="Card.Section.TLabel",
+            )
+            rate.grid(
+                row=0,
+                column=1,
+                sticky="e",
+                padx=(8, 0),
+            )
+
+            delta = ttk.Label(
+                card,
+                text="",
+                style="Card.Muted.TLabel",
+            )
+            delta.grid(
+                row=0,
+                column=2,
+                sticky="e",
+                padx=(5, 5),
+            )
+
+            toggle = ToggleSwitch(
+                card,
+                variable=shown,
+                command=lambda m=mode, t=target:
+                    self._toggle_mode_column(t, m),
+            )
+            toggle.grid(
+                row=0,
+                column=3,
+                sticky="e",
+                padx=(4, 0),
+            )
 
             ToolTip(card, help_text)
 
@@ -2577,6 +4971,70 @@ class TrollheimApp(tk.Tk):
             )
         self._refresh_mode_card_visibility(cards, visible)
 
+    def _create_analysis_header(
+        self,
+        parent,
+        title,
+        description,
+    ):
+        """Cabecera compacta compartida por las pestañas de análisis."""
+        header = ttk.Frame(
+            parent,
+            padding=(20, 8, 20, 4),
+        )
+        header.pack(fill="x")
+
+        ttk.Label(
+            header,
+            text=title,
+            style="AnalysisTitle.TLabel",
+        ).pack(side="left")
+
+        ttk.Label(
+            header,
+            text=description,
+            style="AnalysisSubtitle.TLabel",
+        ).pack(
+            side="left",
+            padx=(14, 0),
+        )
+
+    @staticmethod
+    def _create_analysis_controls(parent):
+        """Barra compacta de simulación en una sola fila."""
+        controls = ttk.Frame(
+            parent,
+            style="Card.TFrame",
+            padding=(12, 7),
+        )
+        controls.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 6),
+        )
+        return controls
+
+    @staticmethod
+    def _attach_analysis_progress(
+        controls,
+        progress_var,
+    ):
+        """Usa todo el espacio restante para la barra de progreso integrada."""
+        progress_bar = InlineProgressBar(
+            controls,
+            variable=progress_var,
+            maximum=100,
+            height=30,
+        )
+        progress_bar.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=(18, 10),
+        )
+
+        return progress_bar, progress_bar.status_proxy
+
     def setup_tab_equipment(self, tab):
 
         profile = find_profile(
@@ -2586,37 +5044,44 @@ class TrollheimApp(tk.Tk):
             self.candidate_band_id.get(), self.candidate_profile_id.get()
         ))
         self._equipment_filter_allowed = allowed
+
         for label, variable in self.equipment_item_vars.items():
             if profile:
                 variable.set(label in allowed)
             elif label not in allowed:
                 variable.set(False)
 
-        ttk.Label(
+        self.equipment_progress_var = tk.DoubleVar()
+
+        self._create_analysis_header(
             tab,
-            text=(
+            "Equipamiento",
+            (
                 "Compara combinaciones con el número exacto de objetos seleccionado. "
                 "La referencia es el equipo actual exacto del candidato."
             ),
-            font=("Arial", 8, "italic"),
-        ).pack(pady=(8, 3))
-        self.equipment_progress_var = tk.DoubleVar()
-        self.equipment_progress_bar = ttk.Progressbar(
-            tab, variable=self.equipment_progress_var, maximum=100
         )
-        self.equipment_progress_bar.pack(fill="x", padx=20, pady=(0, 3))
-        self.equipment_status_label = ttk.Label(
-            tab, text="Estado: Listo", font=("Arial", 9, "italic")
-        )
-        self.equipment_status_label.pack(pady=(0, 2))
 
-        controls = ttk.Frame(tab)
-        controls.pack(pady=7)
-        ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
+        controls = self._create_analysis_controls(tab)
+
+        ttk.Label(
+            controls,
+            text="Simulaciones:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 5))
+
         ttk.Entry(
-            controls, textvariable=self.simulations_equipment, width=12
+            controls,
+            textvariable=self.simulations_equipment,
+            width=12,
         ).pack(side="left", padx=(0, 10))
-        ttk.Label(controls, text="Número de objetos:").pack(side="left", padx=(0, 5))
+
+        ttk.Label(
+            controls,
+            text="Número de objetos:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 5))
+
         equipment_count_selector = ttk.Combobox(
             controls,
             textvariable=self.equipment_max_items,
@@ -2630,12 +5095,27 @@ class TrollheimApp(tk.Tk):
             "<<ComboboxSelected>>",
             lambda _event: self._selection_count_changed("equipment"),
         )
+
         self.btn_equipment_run = self._create_simulate_button(
-            controls, self.start_equipment_thread,
+            controls,
+            self.start_equipment_thread,
+        )
+
+        (
+            self.equipment_progress_bar,
+            self.equipment_status_label,
+        ) = self._attach_analysis_progress(
+            controls,
+            self.equipment_progress_var,
         )
 
         filter_bar = self._create_compare_panel(tab)
-        ttk.Label(filter_bar, text="Filtros:", font=("Arial", 9, "bold")).pack(side="left", padx=(8, 6))
+        ttk.Label(
+            filter_bar,
+            text="Filtros:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 6))
+
         option_groups = (
             ("Armaduras", tuple(a for a in BODY_ARMORS if a != "Sin Armadura")),
             (
@@ -2645,50 +5125,72 @@ class TrollheimApp(tk.Tk):
             ("Preparaciones", tuple(p for p in PREPARATIONS if p != "Ninguno")),
             ("Venenos", tuple(p for p in POISONS if p != "Sin veneno")),
         )
+
         for title, values in option_groups:
             self._build_named_filter_menu(
-                filter_bar, title, self.equipment_item_vars, values, allowed
+                filter_bar,
+                title,
+                self.equipment_item_vars,
+                values,
+                allowed,
             )
+
         origin = (
             f"Opciones disponibles para {profile.name} ({profile.band_name})."
-            if profile else "Selección libre: todos los objetos simulables."
+            if profile
+            else "Selección libre: todos los objetos simulables."
         )
-        ttk.Label(filter_bar, text=origin, font=("Arial", 8, "italic")).pack(side="left", padx=(10, 0))
+        ttk.Label(
+            filter_bar,
+            text=origin,
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(10, 0))
 
         equipment_table = ttk.Frame(tab)
         self.equipment_tree = ttk.Treeview(
             equipment_table,
             columns=(
-                "Item1", "Item2", "Item3", "Item4", "Item5", "Optimal", "Motta", "Cost",
-                "CostTotal", "Equipment",
+                "Item1", "Item2", "Item3", "Item4", "Item5",
+                "Optimal", "Motta", "Cost", "CostTotal", "Equipment",
             ),
             show="headings",
         )
-        self._configure_sortable_tree(self.equipment_tree, [
-            ("Item1", "Objeto 1"),
-            ("Item2", "Objeto 2"),
-            ("Item3", "Objeto 3"),
-            ("Item4", "Objeto 4"),
-            ("Item5", "Objeto 5"),
-            ("Optimal", "Mejor resultado"),
-            ("Motta", "Índice MOTTA"),
-            ("Cost", "Coste"),
-            ("CostTotal", "Coste total"),
-            ("Equipment", "Equipo utilizado"),
-        ])
+        self._configure_sortable_tree(
+            self.equipment_tree,
+            [
+                ("Item1", "Objeto 1"),
+                ("Item2", "Objeto 2"),
+                ("Item3", "Objeto 3"),
+                ("Item4", "Objeto 4"),
+                ("Item5", "Objeto 5"),
+                ("Optimal", "Mejor resultado"),
+                ("Motta", "Índice MOTTA"),
+                ("Cost", "Coste"),
+                ("CostTotal", "Coste total"),
+                ("Equipment", "Equipo utilizado"),
+            ],
+        )
+
         for index in range(1, 6):
             self.equipment_tree.column(f"Item{index}", width=170)
+
         self.equipment_tree.column("Optimal", width=180, anchor="center")
         self.equipment_tree.column("Motta", width=130, anchor="center")
         self.equipment_tree.column("Cost", width=170, anchor="center")
         self.equipment_tree.column("CostTotal", width=0, minwidth=0, stretch=False)
         self.equipment_tree.column("Equipment", width=220, anchor="center")
+
         self._apply_result_view("equipment")
         self.equipment_tree.heading(
-            "Cost", text="Coste", anchor="center",
+            "Cost",
+            text="Coste",
+            anchor="center",
             command=lambda: self._sort_equipment_cost(False),
         )
-        self._pack_scrollable_tree(self.equipment_tree, pady=(6, 10))
+        self._pack_scrollable_tree(
+            self.equipment_tree,
+            pady=(2, 6),
+        )
         self._restore_simulation_tab("equipment")
 
     def setup_tab_weapons(self, tab):
@@ -2702,15 +5204,19 @@ class TrollheimApp(tk.Tk):
         self._weapon_filter_allowed = allowed_weapons
         self._weapon_material_allowed = allowed_materials
         self._weapon_defense_allowed = allowed_defenses
+
         for weapon, variable in self.weapon_item_vars.items():
             if weapon not in allowed_weapons:
                 variable.set(False)
+
         for material, variable in self.weapon_material_vars.items():
             if material not in allowed_materials:
                 variable.set(False)
+
         for defense, variable in self.weapon_defense_vars.items():
             if defense not in allowed_defenses:
                 variable.set(False)
+
         if profile:
             for value in allowed_weapons:
                 self.weapon_item_vars[value].set(True)
@@ -2718,66 +5224,110 @@ class TrollheimApp(tk.Tk):
                 self.weapon_material_vars[value].set(True)
             for value in allowed_defenses:
                 self.weapon_defense_vars[value].set(True)
+
         if allowed_weapons and not any(
-            self.weapon_item_vars[value].get() for value in allowed_weapons
+            self.weapon_item_vars[value].get()
+            for value in allowed_weapons
         ):
             first_weapon = next(
-                (value for value in WEAPONS_ALL if value in allowed_weapons), None
+                (
+                    value
+                    for value in WEAPONS_ALL
+                    if value in allowed_weapons
+                ),
+                None,
             )
             if first_weapon:
                 self.weapon_item_vars[first_weapon].set(True)
-        if not any(self.weapon_material_vars[value].get() for value in allowed_materials):
+
+        if not any(
+            self.weapon_material_vars[value].get()
+            for value in allowed_materials
+        ):
             self.weapon_material_vars["Sin material"].set(True)
 
-        ttk.Label(
+        self.weapon_progress_var = tk.DoubleVar()
+
+        self._create_analysis_header(
             tab,
-            text=(
+            "Armas",
+            (
                 "Compara cada arma sola, con escudo o rodela, en parejas legales y las "
                 "armas que ocupan ambas manos, usando solo el equipo disponible."
             ),
-            font=("Arial", 8, "italic"),
-        ).pack(pady=(8, 3))
-        self.weapon_progress_var = tk.DoubleVar()
-        self.weapon_progress_bar = ttk.Progressbar(
-            tab, variable=self.weapon_progress_var, maximum=100
         )
-        self.weapon_progress_bar.pack(fill="x", padx=20, pady=(0, 3))
-        self.weapon_status_label = ttk.Label(
-            tab, text="Estado: Listo", font=("Arial", 9, "italic")
-        )
-        self.weapon_status_label.pack(pady=(0, 2))
 
-        controls = ttk.Frame(tab)
-        controls.pack(pady=7)
-        ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
+        controls = self._create_analysis_controls(tab)
+
+        ttk.Label(
+            controls,
+            text="Simulaciones:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 5))
+
         ttk.Entry(
-            controls, textvariable=self.simulations_weapons, width=12
+            controls,
+            textvariable=self.simulations_weapons,
+            width=12,
         ).pack(side="left", padx=(0, 10))
+
         self.btn_weapons_run = self._create_simulate_button(
-            controls, self.start_weapon_thread,
+            controls,
+            self.start_weapon_thread,
+        )
+
+        (
+            self.weapon_progress_bar,
+            self.weapon_status_label,
+        ) = self._attach_analysis_progress(
+            controls,
+            self.weapon_progress_var,
         )
 
         filter_bar = self._create_compare_panel(tab)
-        ttk.Label(filter_bar, text="Filtros:", font=("Arial", 9, "bold")).pack(side="left", padx=(8, 6))
+        ttk.Label(
+            filter_bar,
+            text="Filtros:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 6))
+
         self._build_weapon_filter_menu(
-            filter_bar, "Armas generales", WEAPONS_GENERAL, allowed_weapons
+            filter_bar,
+            "Armas generales",
+            WEAPONS_GENERAL,
+            allowed_weapons,
         )
         self._build_weapon_filter_menu(
-            filter_bar, "Armas especiales", WEAPONS_EXCLUSIVE, allowed_weapons
+            filter_bar,
+            "Armas especiales",
+            WEAPONS_EXCLUSIVE,
+            allowed_weapons,
         )
         self._build_named_filter_menu(
-            filter_bar, "Materiales", self.weapon_material_vars, WEAPON_MATERIALS,
+            filter_bar,
+            "Materiales",
+            self.weapon_material_vars,
+            WEAPON_MATERIALS,
             allowed_materials,
         )
         self._build_named_filter_menu(
-            filter_bar, "Defensas", self.weapon_defense_vars, ("Escudo", "Rodela"),
+            filter_bar,
+            "Defensas",
+            self.weapon_defense_vars,
+            ("Escudo", "Rodela"),
             allowed_defenses,
         )
+
         origin = (
             f"Opciones disponibles para {profile.name} ({profile.band_name})."
-            if profile else "Selección libre: todas las opciones del simulador."
+            if profile
+            else "Selección libre: todas las opciones del simulador."
         )
-        ttk.Label(filter_bar, text=origin, font=("Arial", 8, "italic")).pack(side="left", padx=(10, 0))
+        ttk.Label(
+            filter_bar,
+            text=origin,
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(10, 0))
 
         weapon_table = ttk.Frame(tab)
         self.weapon_tree = ttk.Treeview(
@@ -2788,23 +5338,29 @@ class TrollheimApp(tk.Tk):
             ),
             show="headings",
         )
-        self._configure_sortable_tree(self.weapon_tree, [
-            ("Main", "Arma principal"),
-            ("Off", "Mano secundaria"),
-            ("Single", "Mano libre"),
-            ("Shield", "Escudo"),
-            ("Dual", "Dos armas"),
-            ("TwoHand", "Dos manos"),
-            ("Optimal", "Mejor resultado"),
-            ("Motta", "Índice MOTTA"),
-            ("Cost", "Coste"),
-            ("CostTotal", "Coste total"),
-            ("Equipment", "Equipo utilizado"),
-        ])
+        self._configure_sortable_tree(
+            self.weapon_tree,
+            [
+                ("Main", "Arma principal"),
+                ("Off", "Mano secundaria"),
+                ("Single", "Mano libre"),
+                ("Shield", "Escudo"),
+                ("Dual", "Dos armas"),
+                ("TwoHand", "Dos manos"),
+                ("Optimal", "Mejor resultado"),
+                ("Motta", "Índice MOTTA"),
+                ("Cost", "Coste"),
+                ("CostTotal", "Coste total"),
+                ("Equipment", "Equipo utilizado"),
+            ],
+        )
+
         self.weapon_tree.column("Main", width=230)
         self.weapon_tree.column("Off", width=230)
+
         for mode, _title in COMBAT_MODES:
             self.weapon_tree.column(mode, width=150, anchor="center")
+
         self.weapon_tree.column("Optimal", width=180, anchor="center")
         self.weapon_tree.column("Cost", width=150, anchor="center")
         self.weapon_tree.column("Motta", width=130, anchor="center")
@@ -2814,10 +5370,16 @@ class TrollheimApp(tk.Tk):
             displaycolumns=("Main", "Off", "Optimal", "Motta", "Cost")
         )
         self.weapon_tree.heading(
-            "Cost", text="Coste", anchor="center",
+            "Cost",
+            text="Coste",
+            anchor="center",
             command=lambda: self._sort_weapon_cost(False),
         )
-        self._pack_scrollable_tree(self.weapon_tree, pady=(6, 10))
+
+        self._pack_scrollable_tree(
+            self.weapon_tree,
+            pady=(2, 6),
+        )
         self._restore_simulation_tab("weapons")
 
     def _build_weapon_filter_menu(self, parent, title, ordered, allowed):
@@ -2850,174 +5412,215 @@ class TrollheimApp(tk.Tk):
 
     @staticmethod
     def _create_compare_panel(parent):
-        """Crea un bloque visual difícil de pasar por alto antes de simular."""
-        border = tk.Frame(parent, background="#202020", bd=0)
-        border.pack(fill="x", padx=20, pady=(4, 8))
-        tk.Label(
-            border,
+        """Panel compacto compartido para filtros y opciones."""
+        panel = ttk.LabelFrame(
+            parent,
             text="ELEMENTOS DE LA SIMULACIÓN",
-            background="#202020",
-            foreground="#ffffff",
-            font=("Arial", 9, "bold"),
-            anchor="w",
-        ).pack(fill="x", padx=10, pady=(5, 3))
-        content = ttk.Frame(border)
-        content.pack(fill="x", padx=2, pady=(0, 2), ipady=6)
-        return content
+            style="AnalysisPanel.TLabelframe",
+            padding=(9, 4),
+        )
+        panel.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 5),
+        )
+        return panel
 
     @staticmethod
     def _create_simulate_button(parent, command):
-        normal_color = "#e6e6e6"
-        hover_color = "#b9dcff"
-        pressed_color = "#8fc5f7"
-        button = tk.Button(
+        button = ttk.Button(
             parent,
             text="SIMULAR",
-            foreground="#000000",
-            background=normal_color,
-            activeforeground="#000000",
-            activebackground=pressed_color,
-            font=("Arial", 10, "bold"),
-            padx=18,
-            pady=4,
-            relief="raised",
-            bd=2,
-            takefocus=1,
+            command=command,
+            style="Accent.TButton",
         )
-
-        def is_enabled():
-            return str(button.cget("state")) == "normal"
-
-        def enter(_event=None):
-            if is_enabled():
-                button.config(background=hover_color)
-
-        def leave(_event=None):
-            if is_enabled():
-                button.config(background=normal_color, relief="raised")
-
-        def press(_event=None):
-            if not is_enabled():
-                return "break"
-            button.config(background=pressed_color, relief="sunken")
-            button.update_idletasks()
-            button._action()
-            return "break"
-
-        def release(_event=None):
-            if is_enabled():
-                button.config(background=hover_color, relief="raised")
-            return "break"
-
-        button.bind("<Enter>", enter, add="+")
-        button.bind("<Leave>", leave, add="+")
-        button.bind("<ButtonPress-1>", press, add="+")
-        button.bind("<ButtonRelease-1>", release, add="+")
-        button.bind("<Return>", press, add="+")
-        button.bind("<space>", press, add="+")
-        button._action = command
         button._default_action = command
         button._default_text = "SIMULAR"
-        button.pack(side="left")
+        button.pack(side="right")
         return button
 
     def setup_tab_combos(self, tab):
 
-        ttk.Label(
+        self.combo_progress_var = tk.DoubleVar()
+
+        self._create_analysis_header(
             tab,
-            text=(
+            "Mejoras",
+            (
                 "Compara incrementos de atributos y nuevas habilidades, individualmente o en "
                 "combinaciones, según la banda y el guerrero seleccionados."
             ),
-            font=("Arial", 8, "italic"),
-        ).pack(pady=(8, 3))
-        self.combo_progress_var = tk.DoubleVar()
-        self.combo_progress_bar = ttk.Progressbar(
-            tab, variable=self.combo_progress_var, maximum=100
         )
-        self.combo_progress_bar.pack(fill="x", padx=20, pady=(0, 3))
-        self.combo_status_label = ttk.Label(
-            tab, text="Estado: Listo", font=("Arial", 9, "italic")
-        )
-        self.combo_status_label.pack(pady=(0, 2))
 
-        controls = ttk.Frame(tab)
-        controls.pack(pady=7)
-        ttk.Label(controls, text="Simulaciones:").pack(side="left", padx=(0, 5))
-        ttk.Entry(controls, textvariable=self.simulations_combos, width=12).pack(side="left", padx=(0, 10))
-        ttk.Label(controls, text="Número de mejoras:").pack(side="left", padx=(0, 5))
+        controls = self._create_analysis_controls(tab)
+
+        ttk.Label(
+            controls,
+            text="Simulaciones:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 5))
+
+        ttk.Entry(
+            controls,
+            textvariable=self.simulations_combos,
+            width=12,
+        ).pack(side="left", padx=(0, 10))
+
+        ttk.Label(
+            controls,
+            text="Número de mejoras:",
+            style="Card.TLabel",
+        ).pack(side="left", padx=(0, 5))
+
         count_selector = ttk.Combobox(
-            controls, textvariable=self.improvement_count, values=(1, 2, 3, 4, 5),
-            state="readonly", width=3, justify="center",
+            controls,
+            textvariable=self.improvement_count,
+            values=(1, 2, 3, 4, 5),
+            state="readonly",
+            width=3,
+            justify="center",
         )
         count_selector.pack(side="left", padx=(0, 10))
-        count_selector.bind("<<ComboboxSelected>>", self._improvement_count_changed)
-        self.btn_combo_run = self._create_simulate_button(
-            controls, self.start_combo_thread,
+        count_selector.bind(
+            "<<ComboboxSelected>>",
+            self._improvement_count_changed,
         )
 
-        self.improvement_filter_bar = self._create_compare_panel(tab)
+        self.btn_combo_run = self._create_simulate_button(
+            controls,
+            self.start_combo_thread,
+        )
+
+        (
+            self.combo_progress_bar,
+            self.combo_status_label,
+        ) = self._attach_analysis_progress(
+            controls,
+            self.combo_progress_var,
+        )
+
+        filter_view_row = ttk.Frame(tab)
+        filter_view_row.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 5),
+        )
+
+        self.improvement_filter_bar = ttk.LabelFrame(
+            filter_view_row,
+            text="ELEMENTOS DE LA SIMULACIÓN",
+            style="AnalysisPanel.TLabelframe",
+            padding=(9, 4),
+        )
+        self.improvement_filter_bar.pack(
+            side="left",
+            fill="x",
+            expand=True,
+        )
         self._refresh_improvement_filters()
 
-        view_controls = ttk.Frame(tab)
-        view_controls.pack(pady=(3, 0))
-        ttk.Label(view_controls, text="Vista:").pack(side="left", padx=(0, 6))
+        view_controls = ttk.Frame(filter_view_row)
+        view_controls.pack(
+            side="right",
+            padx=(12, 0),
+        )
+
+        ttk.Label(
+            view_controls,
+            text="Vista:",
+            style="Muted.TLabel",
+        ).pack(
+            side="left",
+            padx=(0, 5),
+        )
+
         ttk.Radiobutton(
-            view_controls, text="Por equipo", variable=self.combo_view,
-            value="equipment", command=lambda: self._change_result_view("combos"),
-        ).pack(side="left", padx=3)
-        ttk.Radiobutton(
-            view_controls, text="Óptima", variable=self.combo_view,
-            value="optimal", command=lambda: self._change_result_view("combos"),
+            view_controls,
+            text="Por equipo",
+            variable=self.combo_view,
+            value="equipment",
+            command=lambda: self._change_result_view("combos"),
         ).pack(side="left", padx=3)
 
-        self.combo_cards = self._create_mode_cards(tab, "combos")
+        ttk.Radiobutton(
+            view_controls,
+            text="Óptima",
+            variable=self.combo_view,
+            value="optimal",
+            command=lambda: self._change_result_view("combos"),
+        ).pack(side="left", padx=3)
 
-        filter_controls = ttk.Frame(tab)
-        filter_controls.pack(fill="x", padx=10, pady=(5, 1))
-        ttk.Label(filter_controls, text="Buscar combinación:").pack(side="left", padx=(0, 5))
+        # Conserva la búsqueda de combinaciones, integrada en la misma fila.
+        ttk.Label(
+            view_controls,
+            text="Buscar combinación:",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(12, 5))
+
         if not getattr(self, "_combo_search_trace_added", False):
             self.combo_search.trace_add(
-                "write", lambda *_args: self._render_combo_table()
+                "write",
+                lambda *_args: self._render_combo_table(),
             )
             self._combo_search_trace_added = True
-        ttk.Entry(filter_controls, textvariable=self.combo_search, width=32).pack(
-            side="left", fill="x", expand=True
-        )
+
+        ttk.Entry(
+            view_controls,
+            textvariable=self.combo_search,
+            width=22,
+        ).pack(side="left")
+
         ttk.Button(
-            filter_controls,
+            view_controls,
             text="Limpiar",
             command=self._clear_combo_filters,
-        ).pack(side="left", padx=(8, 0))
+        ).pack(side="left", padx=(6, 0))
+
+        self.combo_cards = self._create_mode_cards(
+            tab,
+            "combos",
+        )
 
         combo_table = ttk.Frame(tab)
         self.combo_tree = ttk.Treeview(
             combo_table,
-            columns=("Mejora1", "Mejora2", "Mejora3", "Mejora4", "Mejora5",
-                     "Single", "Shield", "Dual", "TwoHand", "Optimal", "Equipment"),
+            columns=(
+                "Mejora1", "Mejora2", "Mejora3", "Mejora4", "Mejora5",
+                "Single", "Shield", "Dual", "TwoHand", "Optimal", "Equipment",
+            ),
             show="headings",
         )
-        self._configure_sortable_tree(self.combo_tree, [
-            ("Mejora1", "Mejora 1"),
-            ("Mejora2", "Mejora 2"),
-            ("Mejora3", "Mejora 3"),
-            ("Mejora4", "Mejora 4"),
-            ("Mejora5", "Mejora 5"),
-            ("Single", "Mano libre"),
-            ("Shield", "Escudo"),
-            ("Dual", "Dos armas"),
-            ("TwoHand", "Dos manos"),
-            ("Optimal", "Mejor resultado"),
-            ("Equipment", "Equipo utilizado"),
-        ])
+        self._configure_sortable_tree(
+            self.combo_tree,
+            [
+                ("Mejora1", "Mejora 1"),
+                ("Mejora2", "Mejora 2"),
+                ("Mejora3", "Mejora 3"),
+                ("Mejora4", "Mejora 4"),
+                ("Mejora5", "Mejora 5"),
+                ("Single", "Mano libre"),
+                ("Shield", "Escudo"),
+                ("Dual", "Dos armas"),
+                ("TwoHand", "Dos manos"),
+                ("Optimal", "Mejor resultado"),
+                ("Equipment", "Equipo utilizado"),
+            ],
+        )
+
         for index in range(1, 6):
             self.combo_tree.column(f"Mejora{index}", width=145)
+
         for mode, _title in COMBAT_MODES:
             self.combo_tree.column(mode, width=150, anchor="center")
+
         self.combo_tree.column("Optimal", width=180, anchor="center")
         self.combo_tree.column("Equipment", width=220, anchor="center")
+
         self._apply_result_view("combos")
-        self._pack_scrollable_tree(self.combo_tree)
+        self._pack_scrollable_tree(
+            self.combo_tree,
+            pady=(2, 6),
+        )
         self._restore_simulation_tab("combos")
 
     def _available_improvement_skills(self):
@@ -3036,6 +5639,7 @@ class TrollheimApp(tk.Tk):
         bar = getattr(self, "improvement_filter_bar", None)
         if bar is None:
             return
+
         try:
             if not bar.winfo_exists():
                 self.improvement_filter_bar = None
@@ -3043,48 +5647,99 @@ class TrollheimApp(tk.Tk):
         except tk.TclError:
             self.improvement_filter_bar = None
             return
+
         for child in bar.winfo_children():
             child.destroy()
-        ttk.Label(bar, text="Filtros:", font=("Arial", 9, "bold")).pack(side="left", padx=(8, 6))
+
+        ttk.Label(
+            bar,
+            text="Filtros:",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(0, 6))
+
         self._build_named_filter_menu(
-            bar, "Incrementos de atributos", self.improvement_attribute_vars,
-            tuple(self.improvement_attribute_vars), set(self.improvement_attribute_vars),
+            bar,
+            "Incrementos de atributos",
+            self.improvement_attribute_vars,
+            tuple(self.improvement_attribute_vars),
+            set(self.improvement_attribute_vars),
         )
 
         available = self._available_improvement_skills()
+
         try:
-            owned = set(self._candidate_for_simulation().get("skills", ()))
+            owned = set(
+                self._candidate_for_simulation().get("skills", ())
+            )
         except (AttributeError, ValueError):
             owned = set()
-        for skill, variable in self.improvement_skill_vars.items():
-            variable.set(skill in available and skill not in owned)
 
-        button = ttk.Menubutton(bar, text="Habilidades ▾")
+        for skill, variable in self.improvement_skill_vars.items():
+            variable.set(
+                skill in available
+                and skill not in owned
+            )
+
+        button = ttk.Menubutton(
+            bar,
+            text="Habilidades ▾",
+        )
         button.pack(side="left", padx=3)
-        menu = tk.Menu(button, tearoff=False)
+
+        menu = tk.Menu(
+            button,
+            tearoff=False,
+        )
+
         if available:
             for skill in SKILLS:
                 if skill not in available:
                     continue
+
                 if skill in owned:
                     menu.add_checkbutton(
                         label=f"✓ {skill} (ya la tiene el candidato)",
-                        variable=self.improvement_skill_vars[skill], state="disabled",
+                        variable=self.improvement_skill_vars[skill],
+                        state="disabled",
                     )
                 else:
-                    menu.add_checkbutton(label=skill, variable=self.improvement_skill_vars[skill])
-            selectable = tuple(skill for skill in SKILLS if skill in available and skill not in owned)
+                    menu.add_checkbutton(
+                        label=skill,
+                        variable=self.improvement_skill_vars[skill],
+                    )
+
+            selectable = tuple(
+                skill
+                for skill in SKILLS
+                if skill in available
+                and skill not in owned
+            )
+
             menu.add_separator()
             menu.add_command(
                 label="Marcar todas",
-                command=lambda: self._set_named_filters(self.improvement_skill_vars, selectable, True),
+                command=lambda:
+                    self._set_named_filters(
+                        self.improvement_skill_vars,
+                        selectable,
+                        True,
+                    ),
             )
             menu.add_command(
                 label="Desmarcar todas",
-                command=lambda: self._set_named_filters(self.improvement_skill_vars, selectable, False),
+                command=lambda:
+                    self._set_named_filters(
+                        self.improvement_skill_vars,
+                        selectable,
+                        False,
+                    ),
             )
         else:
-            menu.add_command(label="No hay habilidades disponibles", state="disabled")
+            menu.add_command(
+                label="No hay habilidades disponibles",
+                state="disabled",
+            )
+
         button.config(menu=menu)
 
     def _improvement_count_changed(self, _event=None):
@@ -3636,16 +6291,12 @@ class TrollheimApp(tk.Tk):
 
     def _activate_cancel_button(self, button):
         self._simulation_cancel_event = threading.Event()
-        button.config(state="normal", text="CANCELAR")
-        if isinstance(button, tk.Button):
-            button._action = self.cancel_simulation
-            button.config(
-                background="#d9534f", foreground="#ffffff",
-                activebackground="#c9302c", activeforeground="#ffffff",
-                relief="raised",
-            )
-        else:
-            button.config(command=self.cancel_simulation)
+        button.config(
+            state="normal",
+            text="CANCELAR",
+            command=self.cancel_simulation,
+            style="Danger.TButton",
+        )
 
     def cancel_simulation(self):
         if not getattr(self, "_simulation_running", False):
@@ -3765,18 +6416,13 @@ class TrollheimApp(tk.Tk):
                     default_text = getattr(button, "_default_text", "SIMULAR")
                     default_action = getattr(button, "_default_action", None)
                     button.config(state="normal", text=default_text)
-                    if isinstance(button, tk.Button):
-                        if default_action is not None:
-                            button._action = default_action
+                    if default_action is not None:
                         button.config(
-                            background="#e6e6e6", foreground="#000000",
-                            activebackground="#8fc5f7", activeforeground="#000000",
-                            relief="raised",
+                            command=default_action,
+                            style="Accent.TButton",
                         )
-                    elif default_action is not None:
-                        button.config(command=default_action)
                 except tk.TclError:
-                    # Igual que arriba: no hay botón que reactivar si la pestaña no existe.
+                    # No hay botón que reactivar si su pestaña no existe.
                     pass
 
     def _simulation_cancelled(self):
